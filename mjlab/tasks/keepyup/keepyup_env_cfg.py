@@ -5,6 +5,7 @@ import math
 from mjlab.envs import ManagerBasedRlEnvCfg
 from mjlab.envs.mdp.actions import JointPositionActionCfg
 from mjlab.managers.action_manager import ActionTermCfg
+from mjlab.managers.curriculum_manager import CurriculumTermCfg
 from mjlab.managers.event_manager import EventTermCfg
 from mjlab.managers.observation_manager import ObservationGroupCfg, ObservationTermCfg
 from mjlab.managers.reward_manager import RewardTermCfg
@@ -283,78 +284,72 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
     ##
     
     rewards = {
-        "bounce_event": RewardTermCfg(
-            func=mdp.bounce_event_reward,
-            weight=8.0,
+        "bounce_quality": RewardTermCfg(
+            func=mdp.bounce_quality_reward,
+            weight=10.0,
             params={
                 "sensor_name": "paddle_ball_contact",
                 "ball_cfg": SceneEntityCfg("ball"),
-                "max_reward_velocity": 3.0,
-                "min_upward_velocity": 1.1,
-                "min_apex_height": 1.15,
-                "min_apex_gain": 0.20,
+                # Camera-aware apex shaping: keep arc in a lower, repeatable band.
+                "target_apex_height": 1.42,
+                "apex_std": 0.12,
+                "target_upward_velocity": 1.75,
+                "velocity_std": 0.40,
+                "min_upward_velocity": 0.4,
                 "min_reward_interval_steps": 8,
             },
         ),
-        "ball_alive": RewardTermCfg(
-            func=mdp.ball_alive,
-            weight=0.1,
+        "under_ball_alignment": RewardTermCfg(
+            func=mdp.under_ball_alignment_reward,
+            weight=1.5,
             params={
-                "max_distance": 1.2,
+                "std_xy": 0.12,
+                "min_descending_speed": 0.05,
+                "strike_zone_z_min": 0.82,
+                "strike_zone_z_max": 1.22,
                 "robot_cfg": SceneEntityCfg("robot"),
                 "ball_cfg": SceneEntityCfg("ball"),
             },
         ),
-        "paddle_ball_distance": RewardTermCfg(
-            func=mdp.paddle_ball_distance,
-            weight=0.2,
+        "strike_plane_hold": RewardTermCfg(
+            func=mdp.strike_plane_hold_reward,
+            weight=0.8,
             params={
-                "std": 0.2,
+                "target_paddle_height": 0.95,
+                "std": 0.08,
+                "ascending_vz_threshold": 0.05,
+                "far_descending_height": 1.25,
                 "robot_cfg": SceneEntityCfg("robot"),
                 "ball_cfg": SceneEntityCfg("ball"),
             },
         ),
-        "ball_height": RewardTermCfg(
-            func=mdp.ball_height_reward,
-            weight=1.8,
-            params={
-                "target_height": 1.35,
-                "std": 0.18,
-                "ball_cfg": SceneEntityCfg("ball"),
-            },
-        ),
-        "ball_height_ceiling": RewardTermCfg(
-            func=mdp.ball_height_above_ceiling_penalty,
+        "upward_chase": RewardTermCfg(
+            func=mdp.upward_chase_penalty,
             weight=-1.0,
             params={
-                "ceiling_height": 1.55,
-                "deadband": 0.02,
+                "ball_ascending_threshold": 0.05,
+                "robot_cfg": SceneEntityCfg("robot"),
+                "ball_cfg": SceneEntityCfg("ball"),
+            },
+        ),
+        "apex_clearance_target": RewardTermCfg(
+            func=mdp.apex_clearance_target_reward,
+            weight=0.7,
+            params={
+                "target_clearance": 0.45,
+                "std": 0.10,
+                "apex_vz_window": 0.18,
+                "min_ball_height": 1.00,
+                "robot_cfg": SceneEntityCfg("robot"),
                 "ball_cfg": SceneEntityCfg("ball"),
             },
         ),
         "sustained_contact": RewardTermCfg(
             func=mdp.sustained_contact_penalty,
-            weight=-2.0,
+            weight=-2.5,
             params={
                 "sensor_name": "paddle_ball_contact",
                 "threshold": 2,
-            },
-        ),
-        "paddle_height_ceiling": RewardTermCfg(
-            func=mdp.paddle_height_ceiling_penalty,
-            weight=-0.5,
-            params={
-                "max_paddle_height": 1.05,
-                "deadband": 0.02,
-                "robot_cfg": SceneEntityCfg("robot"),
-            },
-        ),
-        "paddle_face_up": RewardTermCfg(
-            func=mdp.paddle_face_up_reward,
-            weight=0.3,
-            params={
-                "robot_cfg": SceneEntityCfg("robot"),
-                "min_alignment": 0.80,
             },
         ),
         "self_collisions": RewardTermCfg(
@@ -374,19 +369,74 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
             func=mdp.joint_pos_limits,
             weight=-5.0,
         ),
-        "posture": RewardTermCfg(
-            func=mdp.posture,
-            weight=0.1,
-            params={
-                "asset_cfg": SceneEntityCfg(
-                    "robot",
-                    joint_names=left_arm_joint_names,
-                ),
-                "std": {".*": 0.3},  # Moderate tolerance for arm motion
-            },
-        ),
     }
     
+    ##
+    # Curriculum
+    ##
+
+    curriculum = {
+        "ball_state_noise": CurriculumTermCfg(
+            func=mdp.ball_state_noise_schedule,
+            params={
+                # Stages are in env steps (common_step_counter).
+                # Approximate iteration mapping assumes num_steps_per_env ~= 24.
+                "stages": [
+                    # Stage 0: near-oracle bootstrap.
+                    {
+                        "step": 0,
+                        "camera_fps": 200.0,
+                        "update_prob": None,
+                        "dropout_prob": 0.0,
+                        "pos_noise_std": 0.0015,
+                        "vel_noise_std": 0.015,
+                        "outlier_prob": 0.0,
+                        "outlier_std": 0.0,
+                        "stale_vel_decay": 1.0,
+                    },
+                    # Stage 1: mild realism.
+                    {
+                        "step": 300 * 24,
+                        "camera_fps": 35.0,
+                        "update_prob": None,
+                        "dropout_prob": 0.02,
+                        "pos_noise_std": 0.006,
+                        "vel_noise_std": 0.06,
+                        "outlier_prob": 0.003,
+                        "outlier_std": 0.03,
+                        "stale_vel_decay": 0.995,
+                    },
+                    # Stage 2: medium realism.
+                    {
+                        "step": 900 * 24,
+                        "camera_fps": 27.5,
+                        "update_prob": None,
+                        "dropout_prob": 0.05,
+                        "pos_noise_std": 0.010,
+                        "vel_noise_std": 0.09,
+                        "outlier_prob": 0.008,
+                        "outlier_std": 0.04,
+                        "stale_vel_decay": 0.99,
+                    },
+                    # Stage 3: target deployment realism (~20 fps effective).
+                    {
+                        "step": 1500 * 24,
+                        "camera_fps": 20.0,
+                        "update_prob": None,
+                        "dropout_prob": 0.08,
+                        "pos_noise_std": 0.012,
+                        "vel_noise_std": 0.10,
+                        "outlier_prob": 0.01,
+                        "outlier_std": 0.05,
+                        "stale_vel_decay": 0.98,
+                    },
+                ],
+                "term_name": "ball_state",
+                "groups": ("policy", "critic"),
+            },
+        )
+    }
+
     ##
     # Terminations
     ##
@@ -436,6 +486,7 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
         events=events,
         rewards=rewards,
         terminations=terminations,
+        curriculum=curriculum,
         viewer=ViewerConfig(
             origin_type=ViewerConfig.OriginType.ASSET_BODY,
             entity_name="robot",

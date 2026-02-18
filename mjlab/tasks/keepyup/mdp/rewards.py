@@ -109,6 +109,213 @@ class bounce_event_reward:
         return reward
 
 
+class bounce_quality_reward:
+    """Reward quality of each bounce based on apex and upward velocity targets."""
+
+    def __init__(self, cfg: RewardTermCfg, env: ManagerBasedRlEnv):
+        self.sensor_name = cfg.params["sensor_name"]
+        self.prev_contact = torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
+        self.steps_since_rewarded = torch.full(
+            (env.num_envs,), 10_000, dtype=torch.int32, device=env.device
+        )
+
+    def __call__(
+        self,
+        env: ManagerBasedRlEnv,
+        sensor_name: str,
+        ball_cfg: SceneEntityCfg = _DEFAULT_BALL_CFG,
+        target_apex_height: float = 1.42,
+        apex_std: float = 0.12,
+        target_upward_velocity: float = 1.75,
+        velocity_std: float = 0.40,
+        min_upward_velocity: float = 0.4,
+        min_reward_interval_steps: int = 8,
+    ) -> torch.Tensor:
+        contact_sensor: ContactSensor = env.scene[sensor_name]
+        assert contact_sensor.data.found is not None
+
+        current_contact = contact_sensor.data.found.squeeze(-1) > 0
+        bounce_completed = self.prev_contact & ~current_contact
+
+        ball: Entity = env.scene[ball_cfg.name]
+        ball_z = ball.data.root_link_pos_w[:, 2]
+        ball_vz = ball.data.root_link_lin_vel_w[:, 2]
+        upward_vz = torch.clamp(ball_vz, min=0.0)
+        predicted_apex = ball_z + torch.square(upward_vz) / (2.0 * 9.81)
+
+        apex_score = torch.exp(-torch.square(predicted_apex - target_apex_height) / (apex_std ** 2))
+        vel_score = torch.exp(
+            -torch.square(upward_vz - target_upward_velocity) / (velocity_std ** 2)
+        )
+        quality = apex_score * vel_score
+
+        cooldown_ok = self.steps_since_rewarded >= min_reward_interval_steps
+        valid = upward_vz >= min_upward_velocity
+        rewarded = bounce_completed & cooldown_ok & valid
+        reward = torch.where(rewarded, quality, torch.zeros_like(quality))
+
+        self.prev_contact = current_contact
+        self.steps_since_rewarded = torch.where(
+            rewarded, torch.zeros_like(self.steps_since_rewarded), self.steps_since_rewarded + 1
+        )
+
+        log = env.extras.setdefault("log", {})
+        log["Metrics/predicted_apex_mean"] = predicted_apex.mean()
+        log["Metrics/bounce_quality_mean"] = quality.mean()
+        log["Metrics/rewarded_bounce_quality_mean"] = torch.where(
+            rewarded, quality, torch.zeros_like(quality)
+        ).sum() / torch.clamp(rewarded.float().sum(), min=1.0)
+        return reward
+
+
+class under_ball_alignment_reward:
+    """Reward paddle XY alignment under a descending ball near strike zone."""
+
+    def __init__(self, cfg: RewardTermCfg, env: ManagerBasedRlEnv):
+        robot: Entity = env.scene["robot"]
+        ids, _names = robot.find_sites("paddle_face")
+        if len(ids) == 0:
+            raise RuntimeError("paddle_face site not found on robot entity")
+        self._paddle_site_idx: int = ids[0]
+
+    def __call__(
+        self,
+        env: ManagerBasedRlEnv,
+        std_xy: float = 0.12,
+        min_descending_speed: float = 0.05,
+        strike_zone_z_min: float = 0.82,
+        strike_zone_z_max: float = 1.22,
+        robot_cfg: SceneEntityCfg = _DEFAULT_ROBOT_CFG,
+        ball_cfg: SceneEntityCfg = _DEFAULT_BALL_CFG,
+    ) -> torch.Tensor:
+        robot: Entity = env.scene[robot_cfg.name]
+        ball: Entity = env.scene[ball_cfg.name]
+
+        paddle_pos = robot.data.site_pos_w[:, self._paddle_site_idx, :]
+        ball_pos = ball.data.root_link_pos_w
+        ball_vz = ball.data.root_link_lin_vel_w[:, 2]
+
+        descending = ball_vz < -min_descending_speed
+        in_zone = (ball_pos[:, 2] >= strike_zone_z_min) & (ball_pos[:, 2] <= strike_zone_z_max)
+        active = descending & in_zone
+
+        xy_dist = torch.norm(ball_pos[:, :2] - paddle_pos[:, :2], dim=-1)
+        score = torch.exp(-torch.square(xy_dist) / (std_xy ** 2))
+        return torch.where(active, score, torch.zeros_like(score))
+
+
+class strike_plane_hold_reward:
+    """Reward staying near a strike plane while the ball is not in strike phase."""
+
+    def __init__(self, cfg: RewardTermCfg, env: ManagerBasedRlEnv):
+        robot: Entity = env.scene["robot"]
+        ids, _names = robot.find_sites("paddle_face")
+        if len(ids) == 0:
+            raise RuntimeError("paddle_face site not found on robot entity")
+        self._paddle_site_idx: int = ids[0]
+
+    def __call__(
+        self,
+        env: ManagerBasedRlEnv,
+        target_paddle_height: float = 0.95,
+        std: float = 0.08,
+        ascending_vz_threshold: float = 0.05,
+        far_descending_height: float = 1.25,
+        robot_cfg: SceneEntityCfg = _DEFAULT_ROBOT_CFG,
+        ball_cfg: SceneEntityCfg = _DEFAULT_BALL_CFG,
+    ) -> torch.Tensor:
+        robot: Entity = env.scene[robot_cfg.name]
+        ball: Entity = env.scene[ball_cfg.name]
+
+        paddle_z = robot.data.site_pos_w[:, self._paddle_site_idx, 2]
+        ball_z = ball.data.root_link_pos_w[:, 2]
+        ball_vz = ball.data.root_link_lin_vel_w[:, 2]
+
+        # Active when ball is rising or still high before descending into strike zone.
+        active = (ball_vz > ascending_vz_threshold) | (ball_z > far_descending_height)
+        score = torch.exp(-torch.square(paddle_z - target_paddle_height) / (std ** 2))
+        return torch.where(active, score, torch.zeros_like(score))
+
+
+class upward_chase_penalty:
+    """Penalize upward paddle motion while the ball is ascending."""
+
+    def __init__(self, cfg: RewardTermCfg, env: ManagerBasedRlEnv):
+        robot: Entity = env.scene["robot"]
+        ids, _names = robot.find_sites("paddle_face")
+        if len(ids) == 0:
+            raise RuntimeError("paddle_face site not found on robot entity")
+        self._paddle_site_idx: int = ids[0]
+        self._prev_paddle_z = torch.zeros(env.num_envs, device=env.device)
+        self._initialized = torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
+
+    def reset(self, env_ids: torch.Tensor | slice | None = None) -> None:
+        if env_ids is None:
+            self._initialized[:] = False
+            self._prev_paddle_z[:] = 0.0
+        else:
+            self._initialized[env_ids] = False
+            self._prev_paddle_z[env_ids] = 0.0
+
+    def __call__(
+        self,
+        env: ManagerBasedRlEnv,
+        ball_ascending_threshold: float = 0.05,
+        robot_cfg: SceneEntityCfg = _DEFAULT_ROBOT_CFG,
+        ball_cfg: SceneEntityCfg = _DEFAULT_BALL_CFG,
+    ) -> torch.Tensor:
+        robot: Entity = env.scene[robot_cfg.name]
+        ball: Entity = env.scene[ball_cfg.name]
+
+        paddle_z = robot.data.site_pos_w[:, self._paddle_site_idx, 2]
+        ball_vz = ball.data.root_link_lin_vel_w[:, 2]
+
+        not_init = ~self._initialized
+        if not_init.any():
+            self._prev_paddle_z[not_init] = paddle_z[not_init]
+            self._initialized[not_init] = True
+
+        paddle_vz = (paddle_z - self._prev_paddle_z) / env.step_dt
+        self._prev_paddle_z = paddle_z.clone()
+
+        active = ball_vz > ball_ascending_threshold
+        penalty = torch.clamp(paddle_vz, min=0.0)
+        return torch.where(active, penalty, torch.zeros_like(penalty))
+
+
+class apex_clearance_target_reward:
+    """Reward a target ball-paddle clearance around ball apex."""
+
+    def __init__(self, cfg: RewardTermCfg, env: ManagerBasedRlEnv):
+        robot: Entity = env.scene["robot"]
+        ids, _names = robot.find_sites("paddle_face")
+        if len(ids) == 0:
+            raise RuntimeError("paddle_face site not found on robot entity")
+        self._paddle_site_idx: int = ids[0]
+
+    def __call__(
+        self,
+        env: ManagerBasedRlEnv,
+        target_clearance: float = 0.45,
+        std: float = 0.10,
+        apex_vz_window: float = 0.18,
+        min_ball_height: float = 1.00,
+        robot_cfg: SceneEntityCfg = _DEFAULT_ROBOT_CFG,
+        ball_cfg: SceneEntityCfg = _DEFAULT_BALL_CFG,
+    ) -> torch.Tensor:
+        robot: Entity = env.scene[robot_cfg.name]
+        ball: Entity = env.scene[ball_cfg.name]
+
+        paddle_z = robot.data.site_pos_w[:, self._paddle_site_idx, 2]
+        ball_z = ball.data.root_link_pos_w[:, 2]
+        ball_vz = ball.data.root_link_lin_vel_w[:, 2]
+
+        clearance = ball_z - paddle_z
+        near_apex = (torch.abs(ball_vz) <= apex_vz_window) & (ball_z >= min_ball_height)
+        score = torch.exp(-torch.square(clearance - target_clearance) / (std ** 2))
+        return torch.where(near_apex, score, torch.zeros_like(score))
+
+
 def ball_alive(
     env: ManagerBasedRlEnv,
     max_distance: float = 1.2,
