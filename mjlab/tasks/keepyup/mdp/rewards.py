@@ -38,6 +38,9 @@ class bounce_event_reward:
         self.prev_contact = torch.zeros(
             env.num_envs, dtype=torch.bool, device=env.device
         )
+        self.steps_since_rewarded_bounce = torch.full(
+            (env.num_envs,), 10_000, dtype=torch.int32, device=env.device
+        )
         
     def __call__(
         self,
@@ -46,6 +49,9 @@ class bounce_event_reward:
         ball_cfg: SceneEntityCfg,
         max_reward_velocity: float = 3.0,
         min_upward_velocity: float = 1.0,
+        min_apex_height: float = 1.15,
+        min_apex_gain: float = 0.20,
+        min_reward_interval_steps: int = 8,
     ) -> torch.Tensor:
         """Compute bounce event reward."""
         # Get contact sensor data
@@ -61,29 +67,43 @@ class bounce_event_reward:
         # Get ball's vertical velocity at separation
         ball: Entity = env.scene[ball_cfg.name]
         ball_vel_z = ball.data.root_link_lin_vel_w[:, 2]  # [B]
+        ball_pos_z = ball.data.root_link_pos_w[:, 2]  # [B]
         
         # Reward is proportional to upward velocity, clamped to max.
         # Require a minimum upward velocity so tiny "micro-bounces" are ignored.
         upward_vel = torch.clamp(ball_vel_z, 0.0, max_reward_velocity)
         valid_bounce = upward_vel >= min_upward_velocity
-        
-        # Apply reward only when bounce completes
-        reward = torch.where(
-            bounce_completed & valid_bounce, upward_vel, torch.zeros_like(upward_vel)
+        predicted_apex = ball_pos_z + torch.square(upward_vel) / (2.0 * 9.81)
+        apex_ok = (predicted_apex >= min_apex_height) & (
+            (predicted_apex - ball_pos_z) >= min_apex_gain
         )
+        cooldown_ok = self.steps_since_rewarded_bounce >= min_reward_interval_steps
+        
+        # Apply reward only for meaningful, separated bounce events.
+        rewarded_bounce = bounce_completed & valid_bounce & apex_ok & cooldown_ok
+        reward = torch.where(rewarded_bounce, upward_vel, torch.zeros_like(upward_vel))
         
         # Update state for next step
         self.prev_contact = current_contact
+        self.steps_since_rewarded_bounce = torch.where(
+            rewarded_bounce,
+            torch.zeros_like(self.steps_since_rewarded_bounce),
+            self.steps_since_rewarded_bounce + 1,
+        )
         
         # Log diagnostics every step
         log = env.extras.setdefault("log", {})
         log["Metrics/paddle_contact_rate"] = current_contact.float().mean()
         log["Metrics/bounces_per_step"] = bounce_completed.float().mean()
+        log["Metrics/rewarded_bounces_per_step"] = rewarded_bounce.float().mean()
+        log["Metrics/predicted_apex_mean"] = predicted_apex.mean()
 
         # Log bounce-quality metrics when bounce events occur
-        num_bounces = torch.sum(bounce_completed.float())
+        num_bounces = torch.sum(rewarded_bounce.float())
         if num_bounces > 0:
-            mean_bounce_vel = torch.sum(upward_vel * bounce_completed.float()) / num_bounces
+            mean_bounce_vel = (
+                torch.sum(upward_vel * rewarded_bounce.float()) / num_bounces
+            )
             log["Metrics/bounce_velocity_mean"] = mean_bounce_vel
         
         return reward

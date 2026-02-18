@@ -264,7 +264,10 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
                 "sensor_name": "paddle_ball_contact",
                 "ball_cfg": SceneEntityCfg("ball"),
                 "max_reward_velocity": 3.0,
-                "min_upward_velocity": 1.0,
+                "min_upward_velocity": 1.1,
+                "min_apex_height": 1.15,
+                "min_apex_gain": 0.20,
+                "min_reward_interval_steps": 8,
             },
         ),
         "ball_alive": RewardTermCfg(
@@ -278,7 +281,7 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
         ),
         "paddle_ball_distance": RewardTermCfg(
             func=mdp.paddle_ball_distance,
-            weight=1.0,
+            weight=0.2,
             params={
                 "std": 0.2,
                 "robot_cfg": SceneEntityCfg("robot"),
@@ -296,10 +299,10 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
         ),
         "sustained_contact": RewardTermCfg(
             func=mdp.sustained_contact_penalty,
-            weight=-1.0,
+            weight=-2.0,
             params={
                 "sensor_name": "paddle_ball_contact",
-                "threshold": 10,
+                "threshold": 2,
             },
         ),
         "paddle_height_ceiling": RewardTermCfg(
