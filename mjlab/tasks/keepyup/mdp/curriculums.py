@@ -28,12 +28,11 @@ class BallSpawnStage(TypedDict, total=False):
     """Stage definition for reset-ball spawn difficulty."""
 
     step: int
-    pose_range: dict[str, tuple[float, float]]
+    spawn_height: float
     hit_probability: float
     hit_radius_fraction: float
     miss_radius_range: tuple[float, float]
     entry_angle_deg_range: tuple[float, float]
-    time_to_impact_range: tuple[float, float]
 
 
 class BounceRewardStage(TypedDict, total=False):
@@ -146,8 +145,8 @@ def ball_spawn_difficulty_schedule(
     except ValueError:
         return {}
 
-    if active.get("pose_range") is not None:
-        term_cfg.params["pose_range"] = dict(active["pose_range"])
+    if active.get("spawn_height") is not None:
+        term_cfg.params["spawn_height"] = float(active["spawn_height"])
     if active.get("hit_probability") is not None:
         term_cfg.params["hit_probability"] = float(active["hit_probability"])
     if active.get("hit_radius_fraction") is not None:
@@ -156,20 +155,15 @@ def ball_spawn_difficulty_schedule(
         term_cfg.params["miss_radius_range"] = tuple(active["miss_radius_range"])
     if active.get("entry_angle_deg_range") is not None:
         term_cfg.params["entry_angle_deg_range"] = tuple(active["entry_angle_deg_range"])
-    if active.get("time_to_impact_range") is not None:
-        term_cfg.params["time_to_impact_range"] = tuple(active["time_to_impact_range"])
 
-    pose_range = term_cfg.params.get("pose_range", {})
     entry_rng = term_cfg.params.get("entry_angle_deg_range", (0.0, 0.0))
 
     return {
         "stage_idx": float(active_stage_idx),
+        "spawn_height": float(term_cfg.params.get("spawn_height", -1.0)),
         "hit_probability": float(term_cfg.params.get("hit_probability", -1.0)),
         "entry_angle_min_deg": float(entry_rng[0]),
         "entry_angle_max_deg": float(entry_rng[1]),
-        "spawn_x_span": float(pose_range.get("x", (0.0, 0.0))[1] - pose_range.get("x", (0.0, 0.0))[0]),
-        "spawn_y_span": float(pose_range.get("y", (0.0, 0.0))[1] - pose_range.get("y", (0.0, 0.0))[0]),
-        "spawn_z_span": float(pose_range.get("z", (0.0, 0.0))[1] - pose_range.get("z", (0.0, 0.0))[0]),
     }
 
 

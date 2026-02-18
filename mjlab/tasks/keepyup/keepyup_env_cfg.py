@@ -234,19 +234,15 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
             params={
                 "asset_cfg": SceneEntityCfg("ball"),
                 "robot_cfg": SceneEntityCfg("robot"),
-                "pose_range": {
-                    # Spawn volume sampled in world frame (no env_origins offsets).
-                    "x": (0.17, 0.24),
-                    "y": (0.02, 0.15),
-                    "z": (1.4, 1.55),
-                },
-                # Targeted ballistic reset settings.
-                "hit_probability": 0.8,
-                "entry_angle_deg_range": (0.0, 25.0),
-                "hit_radius_fraction": 0.7,
+                # Ball spawns spawn_height above the paddle and falls downward under
+                # gravity. entry_angle_deg_range controls horizontal approach angle;
+                # 0 = perfectly straight down. Curriculum stage 0 overrides these.
+                "spawn_height": 0.70,
+                "paddle_radius": 0.075,
+                "hit_probability": 0.80,
+                "hit_radius_fraction": 0.70,
                 "miss_radius_range": (0.085, 0.13),
-                # Curriculum stage 0 overrides this; base default matches final stage.
-                "time_to_impact_range": (0.30, 0.52),
+                "entry_angle_deg_range": (0.0, 25.0),
             },
         ),
         "randomize_ball_bounciness": EventTermCfg(
@@ -287,54 +283,10 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
                 "min_reward_interval_steps": 5,
             },
         ),
-        "bounce_discovery": RewardTermCfg(
-            func=mdp.bounce_discovery_reward,
-            weight=3.0,
-            params={
-                "sensor_name": "paddle_ball_contact",
-                "ball_cfg": SceneEntityCfg("ball"),
-                # Forgiving early signal: reward any clean upward rebound.
-                "min_upward_velocity": 0.08,
-                "min_apex_height": 0.95,
-                "min_apex_gain": 0.04,
-                "target_upward_velocity": 1.0,
-                "min_reward_interval_steps": 3,
-            },
-        ),
-        "lateral_drift": RewardTermCfg(
-            func=mdp.lateral_drift_penalty,
-            weight=-0.25,
-            params={
-                "sensor_name": "paddle_ball_contact",
-                "ball_cfg": SceneEntityCfg("ball"),
-                "post_bounce_window_steps": 5,
-                "deadband": 0.05,
-            },
-        ),
-        "under_ball_alignment": RewardTermCfg(
-            func=mdp.under_ball_alignment_reward,
-            weight=0.12,
-            params={
-                "std_xy": 0.12,
-                "min_descending_speed": 0.05,
-                "strike_zone_z_min": 0.82,
-                "strike_zone_z_max": 1.22,
-                "robot_cfg": SceneEntityCfg("robot"),
-                "ball_cfg": SceneEntityCfg("ball"),
-            },
-        ),
-        "strike_plane_hold": RewardTermCfg(
-            func=mdp.strike_plane_hold_reward,
-            weight=0.04,
-            params={
-                "target_paddle_height": 0.80,
-                "std": 0.08,
-                "ascending_vz_threshold": 0.05,
-                "far_descending_height": 1.25,
-                "robot_cfg": SceneEntityCfg("robot"),
-                "ball_cfg": SceneEntityCfg("ball"),
-            },
-        ),
+        # Scaffolding helpers — disabled while focusing on core bounce signal.
+        "lateral_drift": None,
+        "under_ball_alignment": None,
+        "strike_plane_hold": None,
         "upward_chase": RewardTermCfg(
             func=mdp.upward_chase_penalty,
             weight=-1.2,
@@ -439,114 +391,44 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
             func=mdp.ball_spawn_difficulty_schedule,
             params={
                 "event_term_name": "reset_ball",
-                # Start very easy (nearly straight-down center hits), then broaden.
+                # Ball spawns spawn_height above paddle, falling straight down.
+                # entry_angle_deg_range grows over curriculum to add horizontal throw.
                 "stages": [
                     {
+                        # Stage 0: dead-straight drop, always on paddle center.
                         "step": 0,
-                        "pose_range": {
-                            "x": (0.195, 0.215),
-                            "y": (0.065, 0.085),
-                            "z": (1.50, 1.54),
-                        },
+                        "spawn_height": 0.70,
                         "hit_probability": 1.0,
-                        "hit_radius_fraction": 0.25,
+                        "hit_radius_fraction": 0.20,
                         "miss_radius_range": (0.09, 0.10),
                         "entry_angle_deg_range": (0.0, 2.0),
-                        "time_to_impact_range": (1.05, 1.20),
                     },
                     {
+                        # Stage 1: slight angle variance introduced.
                         "step": 300 * 24,
-                        "pose_range": {
-                            "x": (0.19, 0.225),
-                            "y": (0.055, 0.10),
-                            "z": (1.48, 1.55),
-                        },
+                        "spawn_height": 0.70,
                         "hit_probability": 0.95,
-                        "hit_radius_fraction": 0.40,
+                        "hit_radius_fraction": 0.35,
                         "miss_radius_range": (0.09, 0.11),
                         "entry_angle_deg_range": (0.0, 8.0),
-                        "time_to_impact_range": (0.90, 1.10),
                     },
                     {
+                        # Stage 2: moderate angle variance.
                         "step": 900 * 24,
-                        "pose_range": {
-                            "x": (0.18, 0.235),
-                            "y": (0.04, 0.12),
-                            "z": (1.45, 1.55),
-                        },
+                        "spawn_height": 0.70,
                         "hit_probability": 0.88,
-                        "hit_radius_fraction": 0.55,
+                        "hit_radius_fraction": 0.50,
                         "miss_radius_range": (0.085, 0.12),
                         "entry_angle_deg_range": (0.0, 16.0),
-                        "time_to_impact_range": (0.65, 0.90),
                     },
                     {
+                        # Stage 3: full difficulty matching deployment variety.
                         "step": 1500 * 24,
-                        "pose_range": {
-                            "x": (0.17, 0.24),
-                            "y": (0.02, 0.15),
-                            "z": (1.40, 1.55),
-                        },
+                        "spawn_height": 0.70,
                         "hit_probability": 0.80,
                         "hit_radius_fraction": 0.70,
                         "miss_radius_range": (0.085, 0.13),
                         "entry_angle_deg_range": (0.0, 25.0),
-                        "time_to_impact_range": (0.30, 0.52),
-                    },
-                ],
-            },
-        ),
-        "bounce_reward_shaping": CurriculumTermCfg(
-            func=mdp.bounce_reward_shaping_schedule,
-            params={
-                "stages": [
-                    # Stage 0: strong discovery signal, very forgiving thresholds.
-                    {
-                        "step": 0,
-                        "discovery_weight": 3.0,
-                        "lateral_weight": -0.25,
-                        "under_ball_weight": 0.12,
-                        "strike_plane_weight": 0.04,
-                        "min_upward_velocity": 0.08,
-                        "min_apex_height": 0.95,
-                        "min_apex_gain": 0.04,
-                        "target_upward_velocity": 1.00,
-                    },
-                    # Stage 1: start tightening after discovery.
-                    {
-                        "step": 300 * 24,
-                        "discovery_weight": 2.4,
-                        "lateral_weight": -0.30,
-                        "under_ball_weight": 0.11,
-                        "strike_plane_weight": 0.038,
-                        "min_upward_velocity": 0.12,
-                        "min_apex_height": 1.05,
-                        "min_apex_gain": 0.08,
-                        "target_upward_velocity": 1.20,
-                    },
-                    # Stage 2: intermediate strictness.
-                    {
-                        "step": 900 * 24,
-                        "discovery_weight": 1.8,
-                        "lateral_weight": -0.35,
-                        "under_ball_weight": 0.10,
-                        "strike_plane_weight": 0.035,
-                        "min_upward_velocity": 0.18,
-                        "min_apex_height": 1.15,
-                        "min_apex_gain": 0.12,
-                        "target_upward_velocity": 1.40,
-                    },
-                    # Stage 3: strictest discovery gate, lower helper reliance.
-                    {
-                        "step": 1500 * 24,
-                        "discovery_weight": 1.2,
-                        "lateral_weight": -0.40,
-                        "under_ball_weight": 0.09,
-                        "strike_plane_weight": 0.03,
-                        "min_upward_velocity": 0.24,
-                        "min_apex_height": 1.22,
-                        "min_apex_gain": 0.16,
-                        "target_upward_velocity": 1.60,
                     },
                 ],
             },

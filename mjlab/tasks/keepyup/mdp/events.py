@@ -168,23 +168,34 @@ def reset_root_state_uniform_no_env_origins(
 def reset_ball_targeted_to_paddle(
     env: ManagerBasedRlEnv,
     env_ids: torch.Tensor | None,
-    pose_range: dict[str, tuple[float, float]],
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
     robot_cfg: SceneEntityCfg = _DEFAULT_ROBOT_CFG,
+    spawn_height: float = 0.70,
     paddle_radius: float = 0.075,
-    hit_probability: float = 0.8,
-    hit_radius_fraction: float = 0.7,
+    hit_probability: float = 1.0,
+    hit_radius_fraction: float = 0.5,
     miss_radius_range: tuple[float, float] = (0.08, 0.13),
-    entry_angle_deg_range: tuple[float, float] = (0.0, 28.0),
-    time_to_impact_range: tuple[float, float] = (0.28, 0.55),
-    min_downward_speed_at_impact: float = 0.1,
-    angle_search_steps: int = 21,
+    entry_angle_deg_range: tuple[float, float] = (0.0, 0.0),
 ) -> None:
-    """Reset ball by solving ballistic velocity to target paddle impact.
+    """Reset ball to a position above the paddle with a controlled entry angle.
 
-    This samples a spawn point and an impact point, then computes initial velocity so
-    the ball reaches the impact point under gravity. It allows controlling impact
-    angle while choosing how often the ball hits the paddle directly.
+    The ball spawns exactly ``spawn_height`` metres above the sampled impact point,
+    with zero initial vertical velocity, so it always falls downward under gravity.
+    The ``entry_angle_deg_range`` controls the angle from vertical at which the ball
+    arrives at the paddle:
+
+    - 0 degrees  → ball spawns directly above, falls perfectly straight down.
+    - N degrees  → ball spawns N-degrees offset horizontally, arrives at the paddle
+                   with that angle from vertical. A random azimuth is chosen each
+                   episode so the ball approaches from unpredictable horizontal
+                   directions.
+
+    Time-of-flight is determined purely by ``spawn_height`` and gravity:
+        t_fall = sqrt(2 * spawn_height / g)
+
+    This guarantees the ball always travels downward from spawn, eliminating the
+    upward-trajectory spawning problem that occurs when spawn position and
+    time-to-impact are specified independently.
     """
     if env_ids is None:
         env_ids = torch.arange(env.num_envs, device=env.device, dtype=torch.int)
@@ -192,7 +203,6 @@ def reset_ball_targeted_to_paddle(
     ball: Entity = env.scene[asset_cfg.name]
     robot: Entity = env.scene[robot_cfg.name]
 
-    # Resolve paddle geom for center pose in world frame.
     paddle_geom_ids, _ = robot.find_geoms("paddle_geom")
     if len(paddle_geom_ids) == 0:
         raise RuntimeError("paddle_geom not found on robot entity")
@@ -204,18 +214,11 @@ def reset_ball_targeted_to_paddle(
 
     num = len(env_ids)
     device = env.device
+    g = 9.81
 
-    # Spawn sampling ranges.
-    x_rng = pose_range.get("x", (0.0, 0.0))
-    y_rng = pose_range.get("y", (0.0, 0.0))
-    z_rng = pose_range.get("z", (1.2, 1.2))
-    roll_rng = pose_range.get("roll", (0.0, 0.0))
-    pitch_rng = pose_range.get("pitch", (0.0, 0.0))
-    yaw_rng = pose_range.get("yaw", (0.0, 0.0))
-
-    # Paddle frame basis in world.
+    # Paddle geometry in world frame.
     paddle_center_w = robot.data.geom_pos_w[env_ids, paddle_geom_idx, :]  # [B, 3]
-    paddle_quat_w = robot.data.geom_quat_w[env_ids, paddle_geom_idx, :]  # [B, 4]
+    paddle_quat_w = robot.data.geom_quat_w[env_ids, paddle_geom_idx, :]   # [B, 4]
     basis_x_w = quat_apply(
         paddle_quat_w, torch.tensor([1.0, 0.0, 0.0], device=device).repeat(num, 1)
     )
@@ -223,7 +226,7 @@ def reset_ball_targeted_to_paddle(
         paddle_quat_w, torch.tensor([0.0, 1.0, 0.0], device=device).repeat(num, 1)
     )
 
-    # Impact point on (or near) paddle plane.
+    # Sample impact point on (or near) paddle face.
     hit_mask = torch.rand(num, device=device) < hit_probability
     u = torch.rand(num, device=device)
     theta = sample_uniform(
@@ -240,93 +243,49 @@ def reset_ball_targeted_to_paddle(
         device=device,
     )
     radius = torch.where(hit_mask, hit_radius, miss_r)
-    impact_offset_w = (
-        radius.unsqueeze(-1)
-        * (torch.cos(theta).unsqueeze(-1) * basis_x_w + torch.sin(theta).unsqueeze(-1) * basis_y_w)
+    impact_offset_w = radius.unsqueeze(-1) * (
+        torch.cos(theta).unsqueeze(-1) * basis_x_w
+        + torch.sin(theta).unsqueeze(-1) * basis_y_w
     )
-    impact_point_w = paddle_center_w + impact_offset_w
+    impact_point_w = paddle_center_w + impact_offset_w  # [B, 3]
 
-    # Spawn pose sampled in world (no env_origins offsets).
-    spawn_x = sample_uniform(
-        torch.full((num,), x_rng[0], device=device),
-        torch.full((num,), x_rng[1], device=device),
-        (num,),
-        device=device,
-    )
-    spawn_y = sample_uniform(
-        torch.full((num,), y_rng[0], device=device),
-        torch.full((num,), y_rng[1], device=device),
-        (num,),
-        device=device,
-    )
-    spawn_z = sample_uniform(
-        torch.full((num,), z_rng[0], device=device),
-        torch.full((num,), z_rng[1], device=device),
-        (num,),
-        device=device,
-    )
-    spawn_pos_w = torch.stack([spawn_x, spawn_y, spawn_z], dim=-1)
+    # Time the ball takes to fall spawn_height under gravity with vz0 = 0.
+    t_fall = (2.0 * spawn_height / g) ** 0.5  # scalar (same for all envs)
 
-    # Desired entry angle from vertical at impact. Search for a time that best matches it.
-    target_angle_deg = sample_uniform(
+    # Entry angle determines horizontal speed at impact.
+    # tan(alpha) = vxy_impact / vz_impact, and vz_impact = g * t_fall.
+    entry_angle_deg = sample_uniform(
         torch.full((num,), entry_angle_deg_range[0], device=device),
         torch.full((num,), entry_angle_deg_range[1], device=device),
         (num,),
         device=device,
     )
-    target_angle = torch.deg2rad(target_angle_deg)
+    entry_angle_rad = torch.deg2rad(entry_angle_deg)
+    vz_impact = g * t_fall  # positive magnitude (downward speed at impact)
+    v0_horiz = vz_impact * torch.tan(entry_angle_rad)  # [B], horizontal speed
 
-    t_candidates = torch.linspace(
-        time_to_impact_range[0], time_to_impact_range[1], angle_search_steps, device=device
-    )  # [K]
-    delta = (impact_point_w - spawn_pos_w)[:, None, :]  # [B, K, 3]
-    t = t_candidates[None, :]  # [1, K]
-    g = torch.tensor([0.0, 0.0, -9.81], device=device)
+    # Random azimuth: which horizontal direction the ball approaches from.
+    azimuth = torch.rand(num, device=device) * 2.0 * torch.pi
+    v0_x = v0_horiz * torch.cos(azimuth)  # [B]
+    v0_y = v0_horiz * torch.sin(azimuth)  # [B]
 
-    # Ballistic solve for v0 given candidate times.
-    v0_all = (delta - 0.5 * g[None, None, :] * (t**2).unsqueeze(-1)) / t.unsqueeze(-1)
-    v_imp_all = v0_all + g[None, None, :] * t.unsqueeze(-1)
+    # Spawn position: spawn_height above impact point, offset opposite to travel direction.
+    # ball travels from spawn toward impact, so spawn = impact - v0_horiz_vec * t_fall.
+    horiz_offset = v0_horiz * t_fall  # [B], horizontal distance from impact to spawn
+    spawn_pos_w = impact_point_w.clone()
+    spawn_pos_w[:, 0] = impact_point_w[:, 0] - torch.cos(azimuth) * horiz_offset
+    spawn_pos_w[:, 1] = impact_point_w[:, 1] - torch.sin(azimuth) * horiz_offset
+    spawn_pos_w[:, 2] = impact_point_w[:, 2] + spawn_height
 
-    vxy = torch.norm(v_imp_all[..., :2], dim=-1)  # [B, K]
-    vz_down = torch.clamp(-v_imp_all[..., 2], min=1e-6)  # [B, K], positive means downward
-    angle_all = torch.atan2(vxy, vz_down)  # 0 = straight down
+    # Initial velocity: horizontal only (vz0 = 0 so ball always falls downward).
+    v0 = torch.stack([v0_x, v0_y, torch.zeros(num, device=device)], dim=-1)  # [B, 3]
 
-    # Prefer solutions with downward impact speed above minimum.
-    valid_downward = vz_down >= min_downward_speed_at_impact
-    angle_err = torch.abs(angle_all - target_angle[:, None])
-    angle_err = torch.where(valid_downward, angle_err, angle_err + 1e6)
-
-    best_idx = torch.argmin(angle_err, dim=1)  # [B]
-    v0 = v0_all[torch.arange(num, device=device), best_idx, :]  # [B, 3]
-
-    # Orientations (allow optional pose randomization).
-    roll = sample_uniform(
-        torch.full((num,), roll_rng[0], device=device),
-        torch.full((num,), roll_rng[1], device=device),
-        (num,),
-        device=device,
-    )
-    pitch = sample_uniform(
-        torch.full((num,), pitch_rng[0], device=device),
-        torch.full((num,), pitch_rng[1], device=device),
-        (num,),
-        device=device,
-    )
-    yaw = sample_uniform(
-        torch.full((num,), yaw_rng[0], device=device),
-        torch.full((num,), yaw_rng[1], device=device),
-        (num,),
-        device=device,
-    )
-    q_delta = quat_from_euler_xyz(roll, pitch, yaw)
-    quat_w = quat_mul(root_states[:, 3:7], q_delta)
-
-    # Write pose and velocity.
     ball.write_root_link_pose_to_sim(
-        torch.cat([spawn_pos_w, quat_w], dim=-1), env_ids=env_ids
+        torch.cat([spawn_pos_w, root_states[:, 3:7]], dim=-1), env_ids=env_ids
     )
     root_vel = root_states[:, 7:13].clone()
-    root_vel[:, 0:3] = v0
+    root_vel[:] = 0.0
+    root_vel[:, :3] = v0
     ball.write_root_link_velocity_to_sim(root_vel, env_ids=env_ids)
 
 
@@ -342,17 +301,12 @@ class spawn_ball_targeted_after_delay:
         params = cfg.params
         self._asset_cfg = params.get("asset_cfg", _DEFAULT_ASSET_CFG)
         self._robot_cfg = params.get("robot_cfg", _DEFAULT_ROBOT_CFG)
-        self._pose_range = dict(params.get("pose_range", {}))
+        self._spawn_height = float(params.get("spawn_height", 0.70))
         self._paddle_radius = float(params.get("paddle_radius", 0.075))
-        self._hit_probability = float(params.get("hit_probability", 0.8))
-        self._hit_radius_fraction = float(params.get("hit_radius_fraction", 0.7))
+        self._hit_probability = float(params.get("hit_probability", 1.0))
+        self._hit_radius_fraction = float(params.get("hit_radius_fraction", 0.5))
         self._miss_radius_range = tuple(params.get("miss_radius_range", (0.08, 0.13)))
-        self._entry_angle_deg_range = tuple(params.get("entry_angle_deg_range", (0.0, 28.0)))
-        self._time_to_impact_range = tuple(params.get("time_to_impact_range", (0.28, 0.55)))
-        self._min_downward_speed_at_impact = float(
-            params.get("min_downward_speed_at_impact", 0.1)
-        )
-        self._angle_search_steps = int(params.get("angle_search_steps", 21))
+        self._entry_angle_deg_range = tuple(params.get("entry_angle_deg_range", (0.0, 0.0)))
 
         self._pending_spawn = torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
 
@@ -399,17 +353,14 @@ class spawn_ball_targeted_after_delay:
         reset_ball_targeted_to_paddle(
             env=env,
             env_ids=spawn_ids,
-            pose_range=self._pose_range,
             asset_cfg=self._asset_cfg,
             robot_cfg=self._robot_cfg,
+            spawn_height=self._spawn_height,
             paddle_radius=self._paddle_radius,
             hit_probability=self._hit_probability,
             hit_radius_fraction=self._hit_radius_fraction,
             miss_radius_range=self._miss_radius_range,
             entry_angle_deg_range=self._entry_angle_deg_range,
-            time_to_impact_range=self._time_to_impact_range,
-            min_downward_speed_at_impact=self._min_downward_speed_at_impact,
-            angle_search_steps=self._angle_search_steps,
         )
 
         self._pending_spawn[spawn_ids] = False
