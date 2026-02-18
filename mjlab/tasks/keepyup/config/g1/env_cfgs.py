@@ -87,7 +87,5 @@ def unitree_g1_keepyup_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
         
         # Disable observation corruption
         cfg.observations["policy"].enable_corruption = False
-        # Ground-truth "ball hit ground" is sim-only supervision; disable in play.
-        cfg.terminations.pop("ball_hit_ground", None)
     
     return cfg

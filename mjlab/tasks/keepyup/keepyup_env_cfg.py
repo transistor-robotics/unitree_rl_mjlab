@@ -246,6 +246,8 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
                 "time_to_impact_range": (0.30, 0.52),
                 "hit_radius_fraction": 0.7,
                 "miss_radius_range": (0.085, 0.13),
+                # Delay first impact so joints settle after reset.
+                "time_to_impact_range": (1.05, 1.20),
             },
         ),
         "randomize_ball_bounciness": EventTermCfg(
@@ -427,7 +429,7 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
                         "hit_radius_fraction": 0.25,
                         "miss_radius_range": (0.09, 0.10),
                         "entry_angle_deg_range": (0.0, 2.0),
-                        "time_to_impact_range": (0.38, 0.50),
+                        "time_to_impact_range": (1.05, 1.20),
                     },
                     {
                         "step": 300 * 24,
@@ -440,7 +442,7 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
                         "hit_radius_fraction": 0.40,
                         "miss_radius_range": (0.09, 0.11),
                         "entry_angle_deg_range": (0.0, 8.0),
-                        "time_to_impact_range": (0.34, 0.52),
+                        "time_to_impact_range": (0.90, 1.10),
                     },
                     {
                         "step": 900 * 24,
@@ -453,7 +455,7 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
                         "hit_radius_fraction": 0.55,
                         "miss_radius_range": (0.085, 0.12),
                         "entry_angle_deg_range": (0.0, 16.0),
-                        "time_to_impact_range": (0.32, 0.52),
+                        "time_to_impact_range": (0.65, 0.90),
                     },
                     {
                         "step": 1500 * 24,
@@ -493,7 +495,7 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
         "ball_out_of_frame": TerminationTermCfg(
             func=mdp.ball_out_of_frame,
             params={
-                "grace_steps": 50,
+                "grace_steps": 90,
                 "max_distance": 1.2,
                 "robot_cfg": SceneEntityCfg("robot"),
                 "ball_cfg": SceneEntityCfg("ball"),

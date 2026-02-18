@@ -26,6 +26,7 @@ class randomize_paddle_mount_position:
     """Randomize paddle body mount position in the hand frame at reset."""
 
     def __init__(self, cfg, env: ManagerBasedRlEnv):
+        self._env = env
         params = cfg.params
         robot_cfg = params.get("robot_cfg", _DEFAULT_ROBOT_CFG)
         paddle_body_name = params.get("paddle_body_name", "paddle")
@@ -327,3 +328,88 @@ def reset_ball_targeted_to_paddle(
     root_vel = root_states[:, 7:13].clone()
     root_vel[:, 0:3] = v0
     ball.write_root_link_velocity_to_sim(root_vel, env_ids=env_ids)
+
+
+class spawn_ball_targeted_after_delay:
+    """Spawn the ball once per episode after a delay.
+
+    On reset this term parks the ball below the play area. The interval callback
+    then performs exactly one targeted ballistic spawn for each environment.
+    """
+
+    def __init__(self, cfg, env: ManagerBasedRlEnv):
+        self._env = env
+        params = cfg.params
+        self._asset_cfg = params.get("asset_cfg", _DEFAULT_ASSET_CFG)
+        self._robot_cfg = params.get("robot_cfg", _DEFAULT_ROBOT_CFG)
+        self._pose_range = dict(params.get("pose_range", {}))
+        self._paddle_radius = float(params.get("paddle_radius", 0.075))
+        self._hit_probability = float(params.get("hit_probability", 0.8))
+        self._hit_radius_fraction = float(params.get("hit_radius_fraction", 0.7))
+        self._miss_radius_range = tuple(params.get("miss_radius_range", (0.08, 0.13)))
+        self._entry_angle_deg_range = tuple(params.get("entry_angle_deg_range", (0.0, 28.0)))
+        self._time_to_impact_range = tuple(params.get("time_to_impact_range", (0.28, 0.55)))
+        self._min_downward_speed_at_impact = float(
+            params.get("min_downward_speed_at_impact", 0.1)
+        )
+        self._angle_search_steps = int(params.get("angle_search_steps", 21))
+
+        self._pending_spawn = torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
+
+    def reset(self, env_ids: torch.Tensor | slice | None = None) -> None:
+        if env_ids is None:
+            env_ids = torch.arange(len(self._pending_spawn), device=self._pending_spawn.device)
+        elif isinstance(env_ids, slice):
+            env_ids = torch.arange(len(self._pending_spawn), device=self._pending_spawn.device)[env_ids]
+        else:
+            env_ids = env_ids.to(device=self._pending_spawn.device, dtype=torch.int)
+
+        if len(env_ids) == 0:
+            return
+
+        # Mark these environments for a one-shot delayed spawn.
+        self._pending_spawn[env_ids] = True
+
+        # Park the ball out of play immediately after reset so it cannot interact
+        # while joints settle.
+        ball: Entity = self._env.scene[self._asset_cfg.name]
+        default_root_state = ball.data.default_root_state
+        assert default_root_state is not None
+        parked_state = default_root_state[env_ids].clone()
+        parked_state[:, 0] = 0.0
+        parked_state[:, 1] = 0.0
+        parked_state[:, 2] = -2.0
+        parked_state[:, 7:13] = 0.0
+        ball.write_root_link_pose_to_sim(parked_state[:, 0:7], env_ids=env_ids)
+        ball.write_root_link_velocity_to_sim(parked_state[:, 7:13], env_ids=env_ids)
+
+    def __call__(self, env: ManagerBasedRlEnv, env_ids: torch.Tensor | None, **_) -> None:
+        if env_ids is None:
+            env_ids = torch.arange(env.num_envs, device=env.device, dtype=torch.int)
+        else:
+            env_ids = env_ids.to(device=env.device, dtype=torch.int)
+
+        if len(env_ids) == 0:
+            return
+
+        spawn_ids = env_ids[self._pending_spawn[env_ids]]
+        if len(spawn_ids) == 0:
+            return
+
+        reset_ball_targeted_to_paddle(
+            env=env,
+            env_ids=spawn_ids,
+            pose_range=self._pose_range,
+            asset_cfg=self._asset_cfg,
+            robot_cfg=self._robot_cfg,
+            paddle_radius=self._paddle_radius,
+            hit_probability=self._hit_probability,
+            hit_radius_fraction=self._hit_radius_fraction,
+            miss_radius_range=self._miss_radius_range,
+            entry_angle_deg_range=self._entry_angle_deg_range,
+            time_to_impact_range=self._time_to_impact_range,
+            min_downward_speed_at_impact=self._min_downward_speed_at_impact,
+            angle_search_steps=self._angle_search_steps,
+        )
+
+        self._pending_spawn[spawn_ids] = False
