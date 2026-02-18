@@ -282,13 +282,27 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
                 "apex_std": 0.18,
                 "target_upward_velocity": 1.75,
                 "velocity_std": 0.60,
-                "min_upward_velocity": 0.4,
-                "min_reward_interval_steps": 8,
+                "min_upward_velocity": 0.2,
+                "min_reward_interval_steps": 5,
+            },
+        ),
+        "contact_impulse": RewardTermCfg(
+            func=mdp.contact_impulse_reward,
+            weight=3.0,
+            params={
+                "sensor_name": "paddle_ball_contact",
+                "ball_cfg": SceneEntityCfg("ball"),
+                "min_pre_descending_speed": 0.20,
+                "min_delta_vz": 0.55,
+                "target_delta_vz": 1.70,
+                "min_post_upward_speed": 0.25,
+                "target_post_upward_speed": 1.10,
+                "min_reward_interval_steps": 4,
             },
         ),
         "under_ball_alignment": RewardTermCfg(
             func=mdp.under_ball_alignment_reward,
-            weight=1.5,
+            weight=1.2,
             params={
                 "std_xy": 0.12,
                 "min_descending_speed": 0.05,
@@ -312,7 +326,7 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
         ),
         "upward_chase": RewardTermCfg(
             func=mdp.upward_chase_penalty,
-            weight=-1.0,
+            weight=-1.2,
             params={
                 "ball_ascending_threshold": 0.05,
                 "robot_cfg": SceneEntityCfg("robot"),
@@ -333,10 +347,10 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
         ),
         "sustained_contact": RewardTermCfg(
             func=mdp.sustained_contact_penalty,
-            weight=-2.5,
+            weight=-3.5,
             params={
                 "sensor_name": "paddle_ball_contact",
-                "threshold": 2,
+                "threshold": 1,
             },
         ),
         "self_collisions": RewardTermCfg(

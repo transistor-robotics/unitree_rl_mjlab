@@ -168,6 +168,91 @@ class bounce_quality_reward:
         return reward
 
 
+class contact_impulse_reward:
+    """Reward sharp upward rebound when contact starts on a descending ball.
+
+    This is intentionally event-based and outcome-driven:
+    - Trigger on contact onset (not sustained contact).
+    - Require pre-contact downward velocity.
+    - Reward positive vertical velocity jump and upward post-contact velocity.
+    """
+
+    def __init__(self, cfg: RewardTermCfg, env: ManagerBasedRlEnv):
+        self.sensor_name = cfg.params["sensor_name"]
+        self.prev_contact = torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
+        self.prev_ball_vz = torch.zeros(env.num_envs, dtype=torch.float32, device=env.device)
+        self.steps_since_rewarded = torch.full(
+            (env.num_envs,), 10_000, dtype=torch.int32, device=env.device
+        )
+
+    def reset(self, env_ids: torch.Tensor | slice | None = None) -> None:
+        if env_ids is None:
+            self.prev_contact[:] = False
+            self.prev_ball_vz[:] = 0.0
+            self.steps_since_rewarded[:] = 10_000
+        else:
+            self.prev_contact[env_ids] = False
+            self.prev_ball_vz[env_ids] = 0.0
+            self.steps_since_rewarded[env_ids] = 10_000
+
+    def __call__(
+        self,
+        env: ManagerBasedRlEnv,
+        sensor_name: str,
+        ball_cfg: SceneEntityCfg = _DEFAULT_BALL_CFG,
+        min_pre_descending_speed: float = 0.20,
+        min_delta_vz: float = 0.60,
+        target_delta_vz: float = 1.80,
+        min_post_upward_speed: float = 0.30,
+        target_post_upward_speed: float = 1.20,
+        min_reward_interval_steps: int = 5,
+    ) -> torch.Tensor:
+        contact_sensor: ContactSensor = env.scene[sensor_name]
+        assert contact_sensor.data.found is not None
+
+        current_contact = contact_sensor.data.found.squeeze(-1) > 0
+        contact_onset = ~self.prev_contact & current_contact
+
+        ball: Entity = env.scene[ball_cfg.name]
+        ball_vz = ball.data.root_link_lin_vel_w[:, 2]
+        delta_vz = ball_vz - self.prev_ball_vz
+
+        descending_pre = self.prev_ball_vz <= -min_pre_descending_speed
+        cooldown_ok = self.steps_since_rewarded >= min_reward_interval_steps
+        valid = (delta_vz >= min_delta_vz) & (ball_vz >= min_post_upward_speed)
+        rewarded = contact_onset & descending_pre & cooldown_ok & valid
+
+        delta_score = torch.clamp(
+            (delta_vz - min_delta_vz) / max(target_delta_vz - min_delta_vz, 1e-6),
+            min=0.0,
+            max=1.5,
+        )
+        post_score = torch.clamp(
+            (ball_vz - min_post_upward_speed)
+            / max(target_post_upward_speed - min_post_upward_speed, 1e-6),
+            min=0.0,
+            max=1.5,
+        )
+        quality = delta_score * post_score
+        reward = torch.where(rewarded, quality, torch.zeros_like(quality))
+
+        self.prev_contact = current_contact
+        self.prev_ball_vz = ball_vz.clone()
+        self.steps_since_rewarded = torch.where(
+            rewarded, torch.zeros_like(self.steps_since_rewarded), self.steps_since_rewarded + 1
+        )
+
+        log = env.extras.setdefault("log", {})
+        log["Metrics/contact_onset_rate"] = contact_onset.float().mean()
+        log["Metrics/strike_impulse_mean"] = torch.where(
+            contact_onset, delta_vz, torch.zeros_like(delta_vz)
+        ).sum() / torch.clamp(contact_onset.float().sum(), min=1.0)
+        log["Metrics/rewarded_contact_impulse_mean"] = torch.where(
+            rewarded, quality, torch.zeros_like(quality)
+        ).sum() / torch.clamp(rewarded.float().sum(), min=1.0)
+        return reward
+
+
 class under_ball_alignment_reward:
     """Reward paddle XY alignment under a descending ball near strike zone."""
 
