@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import torch
 
@@ -224,3 +224,115 @@ def ball_ang_vel_in_base_frame(
     ball_angvel_b = quat_apply_inverse(robot_quat_w, ball_angvel_w)
     
     return ball_angvel_b
+
+
+class ball_state_from_rgbd:
+    """Approximate RGBD-tracker ball state with low-rate, noisy sample-and-hold updates.
+
+    This term models the common sim-to-real gap where policy-time ball kinematics are
+    estimated from camera updates rather than read directly from simulator state.
+    It returns a 6D vector: [ball_pos_b(3), ball_vel_b(3)].
+    """
+
+    def __init__(self, cfg: Any, env: ManagerBasedRlEnv):
+        params = cfg.params
+        self._env = env
+        self.robot_cfg = params.get("robot_cfg", _DEFAULT_ROBOT_CFG)
+        self.ball_cfg = params.get("ball_cfg", _DEFAULT_BALL_CFG)
+
+        self._step_dt = float(params.get("control_dt", env.step_dt))
+        camera_fps = float(params.get("camera_fps", 30.0))
+        self._update_prob = float(params.get("update_prob", min(1.0, camera_fps * self._step_dt)))
+
+        self._dropout_prob = float(params.get("dropout_prob", 0.08))
+        self._pos_noise_std = float(params.get("pos_noise_std", 0.012))
+        self._vel_noise_std = float(params.get("vel_noise_std", 0.10))
+        self._outlier_prob = float(params.get("outlier_prob", 0.01))
+        self._outlier_std = float(params.get("outlier_std", 0.05))
+        self._vel_ema_alpha = float(params.get("vel_ema_alpha", 0.35))
+        self._stale_vel_decay = float(params.get("stale_vel_decay", 0.98))
+        self._max_speed = float(params.get("max_speed", 6.0))
+
+        num_envs = env.num_envs
+        device = env.device
+        self._meas_pos_b = torch.zeros(num_envs, 3, device=device)
+        self._est_vel_b = torch.zeros(num_envs, 3, device=device)
+        self._steps_since_meas = torch.zeros(num_envs, dtype=torch.long, device=device)
+        self._initialized = torch.zeros(num_envs, dtype=torch.bool, device=device)
+        self._cached_step = -1
+        self._cached_obs = torch.zeros(num_envs, 6, device=device)
+
+    def reset(self, env_ids: torch.Tensor | slice | None = None) -> None:
+        """Reset estimator state for the selected environments."""
+        pos_b = ball_pos_in_base_frame(self._env, self.robot_cfg, self.ball_cfg)
+        vel_b = ball_vel_in_base_frame(self._env, self.robot_cfg, self.ball_cfg)
+
+        idx = slice(None) if env_ids is None else env_ids
+        self._meas_pos_b[idx] = pos_b[idx]
+        self._est_vel_b[idx] = vel_b[idx]
+        self._steps_since_meas[idx] = 0
+        self._initialized[idx] = True
+        self._cached_step = -1
+
+    def __call__(
+        self,
+        env: ManagerBasedRlEnv,
+        robot_cfg: SceneEntityCfg = _DEFAULT_ROBOT_CFG,
+        ball_cfg: SceneEntityCfg = _DEFAULT_BALL_CFG,
+        **_: Any,
+    ) -> torch.Tensor:
+        self._env = env
+        if self._cached_step == env.common_step_counter:
+            return self._cached_obs
+
+        if not torch.all(self._initialized):
+            missing = (~self._initialized).nonzero(as_tuple=False).squeeze(-1)
+            if len(missing) > 0:
+                pos_b = ball_pos_in_base_frame(env, robot_cfg, ball_cfg)
+                vel_b = ball_vel_in_base_frame(env, robot_cfg, ball_cfg)
+                self._meas_pos_b[missing] = pos_b[missing]
+                self._est_vel_b[missing] = vel_b[missing]
+                self._steps_since_meas[missing] = 0
+                self._initialized[missing] = True
+
+        gt_pos_b = ball_pos_in_base_frame(env, robot_cfg, ball_cfg)
+        visible = ball_visible(env, robot_cfg, ball_cfg).squeeze(-1) > 0.5
+
+        self._steps_since_meas += 1
+
+        update_draw = torch.rand(env.num_envs, device=env.device)
+        dropout_draw = torch.rand(env.num_envs, device=env.device)
+        should_sample = update_draw < self._update_prob
+        dropped = dropout_draw < self._dropout_prob
+        has_new_meas = visible & should_sample & (~dropped)
+
+        if has_new_meas.any():
+            noise = self._pos_noise_std * torch.randn_like(gt_pos_b)
+            outlier_mask = (
+                torch.rand(env.num_envs, device=env.device) < self._outlier_prob
+            ).unsqueeze(-1)
+            outlier_noise = self._outlier_std * torch.randn_like(gt_pos_b)
+            meas_pos_b = gt_pos_b + noise + outlier_mask * outlier_noise
+
+            prev_steps = self._steps_since_meas[has_new_meas].float()
+            dt = torch.clamp(prev_steps * self._step_dt, min=self._step_dt).unsqueeze(-1)
+
+            inst_vel = (meas_pos_b[has_new_meas] - self._meas_pos_b[has_new_meas]) / dt
+            inst_vel = inst_vel + self._vel_noise_std * torch.randn_like(inst_vel)
+            est_vel = (
+                self._vel_ema_alpha * inst_vel
+                + (1.0 - self._vel_ema_alpha) * self._est_vel_b[has_new_meas]
+            )
+            est_vel = torch.clamp(est_vel, min=-self._max_speed, max=self._max_speed)
+
+            self._meas_pos_b[has_new_meas] = meas_pos_b[has_new_meas]
+            self._est_vel_b[has_new_meas] = est_vel
+            self._steps_since_meas[has_new_meas] = 0
+
+        stale_mask = ~has_new_meas
+        if stale_mask.any():
+            self._est_vel_b[stale_mask] = self._stale_vel_decay * self._est_vel_b[stale_mask]
+
+        self._cached_obs = torch.cat([self._meas_pos_b, self._est_vel_b], dim=-1)
+        self._cached_step = env.common_step_counter
+        return self._cached_obs

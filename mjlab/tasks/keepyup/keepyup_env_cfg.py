@@ -79,13 +79,20 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
             params={"asset_cfg": left_arm_cfg},
             noise=Unoise(n_min=-0.5, n_max=0.5),
         ),
-        "ball_pos": ObservationTermCfg(
-            func=mdp.ball_pos_in_base_frame,
-            noise=Unoise(n_min=-0.02, n_max=0.02),
-        ),
-        "ball_vel": ObservationTermCfg(
-            func=mdp.ball_vel_in_base_frame,
-            noise=Unoise(n_min=-0.1, n_max=0.1),
+        "ball_state": ObservationTermCfg(
+            func=mdp.ball_state_from_rgbd,
+            # Camera-like perception model for sim-to-real transfer.
+            params={
+                "camera_fps": 30.0,
+                "dropout_prob": 0.08,
+                "pos_noise_std": 0.012,
+                "vel_noise_std": 0.10,
+                "outlier_prob": 0.01,
+                "outlier_std": 0.05,
+                "vel_ema_alpha": 0.35,
+                "stale_vel_decay": 0.98,
+                "max_speed": 6.0,
+            },
         ),
         "ball_visible": ObservationTermCfg(
             func=mdp.ball_visible,
@@ -97,9 +104,15 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
         "actions": ObservationTermCfg(func=mdp.last_action),
     }
     
-    # Critic gets additional ball angular velocity (not available in real)
+    # Critic gets privileged ball kinematics that are unavailable in deployment.
     critic_terms = {
         **policy_terms,
+        "ball_pos_gt": ObservationTermCfg(
+            func=mdp.ball_pos_in_base_frame,
+        ),
+        "ball_vel_gt": ObservationTermCfg(
+            func=mdp.ball_vel_in_base_frame,
+        ),
         "ball_ang_vel": ObservationTermCfg(
             func=mdp.ball_ang_vel_in_base_frame,
         ),
