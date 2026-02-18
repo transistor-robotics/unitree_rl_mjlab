@@ -409,7 +409,68 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
                 "term_name": "ball_state",
                 "groups": ("policy", "critic"),
             },
-        )
+        ),
+        "ball_spawn_difficulty": CurriculumTermCfg(
+            func=mdp.ball_spawn_difficulty_schedule,
+            params={
+                "event_term_name": "reset_ball",
+                # Start very easy (nearly straight-down center hits), then broaden.
+                "stages": [
+                    {
+                        "step": 0,
+                        "pose_range": {
+                            "x": (0.195, 0.215),
+                            "y": (0.065, 0.085),
+                            "z": (1.50, 1.54),
+                        },
+                        "hit_probability": 1.0,
+                        "hit_radius_fraction": 0.25,
+                        "miss_radius_range": (0.09, 0.10),
+                        "entry_angle_deg_range": (0.0, 2.0),
+                        "time_to_impact_range": (0.38, 0.50),
+                    },
+                    {
+                        "step": 300 * 24,
+                        "pose_range": {
+                            "x": (0.19, 0.225),
+                            "y": (0.055, 0.10),
+                            "z": (1.48, 1.55),
+                        },
+                        "hit_probability": 0.95,
+                        "hit_radius_fraction": 0.40,
+                        "miss_radius_range": (0.09, 0.11),
+                        "entry_angle_deg_range": (0.0, 8.0),
+                        "time_to_impact_range": (0.34, 0.52),
+                    },
+                    {
+                        "step": 900 * 24,
+                        "pose_range": {
+                            "x": (0.18, 0.235),
+                            "y": (0.04, 0.12),
+                            "z": (1.45, 1.55),
+                        },
+                        "hit_probability": 0.88,
+                        "hit_radius_fraction": 0.55,
+                        "miss_radius_range": (0.085, 0.12),
+                        "entry_angle_deg_range": (0.0, 16.0),
+                        "time_to_impact_range": (0.32, 0.52),
+                    },
+                    {
+                        "step": 1500 * 24,
+                        "pose_range": {
+                            "x": (0.17, 0.24),
+                            "y": (0.02, 0.15),
+                            "z": (1.40, 1.55),
+                        },
+                        "hit_probability": 0.80,
+                        "hit_radius_fraction": 0.70,
+                        "miss_radius_range": (0.085, 0.13),
+                        "entry_angle_deg_range": (0.0, 25.0),
+                        "time_to_impact_range": (0.30, 0.52),
+                    },
+                ],
+            },
+        ),
     }
 
     ##
