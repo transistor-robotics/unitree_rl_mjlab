@@ -278,6 +278,8 @@ FIELD_SPECS = {
   "body_quat": FieldSpec("body", default_axes=[0, 1, 2, 3]),
   # Geom - uses IDs directly.
   "geom_friction": FieldSpec("geom", default_axes=[0], valid_axes=[0, 1, 2]),
+  "geom_solref": FieldSpec("geom", default_axes=[0, 1], valid_axes=[0, 1]),
+  "geom_solimp": FieldSpec("geom", default_axes=[0, 1, 2, 3, 4], valid_axes=[0, 1, 2, 3, 4]),
   "geom_pos": FieldSpec("geom", default_axes=[0, 1, 2]),
   "geom_quat": FieldSpec("geom", default_axes=[0, 1, 2, 3]),
   "geom_rgba": FieldSpec("geom", default_axes=[0, 1, 2, 3]),
