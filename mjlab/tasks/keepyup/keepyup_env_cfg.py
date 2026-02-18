@@ -273,15 +273,15 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
     rewards = {
         "bounce_quality": RewardTermCfg(
             func=mdp.bounce_quality_reward,
-            weight=10.0,
+            weight=12.0,
             params={
                 "sensor_name": "paddle_ball_contact",
                 "ball_cfg": SceneEntityCfg("ball"),
                 # Camera-aware apex shaping: keep arc in a lower, repeatable band.
                 "target_apex_height": 1.42,
-                "apex_std": 0.12,
+                "apex_std": 0.18,
                 "target_upward_velocity": 1.75,
-                "velocity_std": 0.40,
+                "velocity_std": 0.60,
                 "min_upward_velocity": 0.4,
                 "min_reward_interval_steps": 8,
             },
@@ -300,9 +300,9 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
         ),
         "strike_plane_hold": RewardTermCfg(
             func=mdp.strike_plane_hold_reward,
-            weight=0.8,
+            weight=0.45,
             params={
-                "target_paddle_height": 0.95,
+                "target_paddle_height": 0.80,
                 "std": 0.08,
                 "ascending_vz_threshold": 0.05,
                 "far_descending_height": 1.25,
