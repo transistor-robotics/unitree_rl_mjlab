@@ -227,6 +227,24 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
                 ),
             },
         ),
+        "wrist_micro_drift": EventTermCfg(
+            func=mdp.reset_joints_by_offset,
+            mode="interval",
+            # Apply tiny wrist perturbations to emulate grip compliance/slippage.
+            interval_range_s=(0.35, 0.75),
+            params={
+                "position_range": (-math.radians(1.25), math.radians(1.25)),
+                "velocity_range": (0.0, 0.0),
+                "asset_cfg": SceneEntityCfg(
+                    "robot",
+                    joint_names=(
+                        "left_wrist_roll_joint",
+                        "left_wrist_pitch_joint",
+                        "left_wrist_yaw_joint",
+                    ),
+                ),
+            },
+        ),
         "reset_ball": EventTermCfg(
             func=mdp.reset_ball_targeted_to_paddle,
             mode="reset",
@@ -272,7 +290,7 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
     rewards = {
         "bounce_event": RewardTermCfg(
             func=mdp.bounce_event_reward,
-            weight=10.0,
+            weight=8.0,
             params={
                 "sensor_name": "paddle_ball_contact",
                 "ball_cfg": SceneEntityCfg("ball"),
@@ -303,10 +321,19 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
         ),
         "ball_height": RewardTermCfg(
             func=mdp.ball_height_reward,
-            weight=1.0,
+            weight=1.8,
             params={
                 "target_height": 1.35,
-                "std": 0.25,
+                "std": 0.18,
+                "ball_cfg": SceneEntityCfg("ball"),
+            },
+        ),
+        "ball_height_ceiling": RewardTermCfg(
+            func=mdp.ball_height_above_ceiling_penalty,
+            weight=-1.0,
+            params={
+                "ceiling_height": 1.55,
+                "deadband": 0.02,
                 "ball_cfg": SceneEntityCfg("ball"),
             },
         ),
@@ -329,10 +356,10 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
         ),
         "paddle_face_up": RewardTermCfg(
             func=mdp.paddle_face_up_reward,
-            weight=0.5,
+            weight=0.3,
             params={
                 "robot_cfg": SceneEntityCfg("robot"),
-                "min_alignment": 0.85,
+                "min_alignment": 0.80,
             },
         ),
         "self_collisions": RewardTermCfg(

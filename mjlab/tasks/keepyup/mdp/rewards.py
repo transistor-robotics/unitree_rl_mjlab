@@ -203,6 +203,18 @@ def ball_height_reward(
     return torch.exp(-height_error / (std ** 2))
 
 
+def ball_height_above_ceiling_penalty(
+    env: ManagerBasedRlEnv,
+    ceiling_height: float = 1.55,
+    deadband: float = 0.02,
+    ball_cfg: SceneEntityCfg = _DEFAULT_BALL_CFG,
+) -> torch.Tensor:
+    """Soft penalty when the ball flies too high above a ceiling."""
+    ball: Entity = env.scene[ball_cfg.name]
+    ball_z = ball.data.root_link_pos_w[:, 2]  # [B]
+    return torch.clamp(ball_z - (ceiling_height + deadband), min=0.0)
+
+
 class paddle_height_ceiling_penalty:
     """Soft penalty when paddle rises above a height ceiling.
 
