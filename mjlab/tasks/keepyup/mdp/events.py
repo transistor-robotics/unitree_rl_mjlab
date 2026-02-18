@@ -22,6 +22,76 @@ _DEFAULT_ASSET_CFG = SceneEntityCfg("ball")
 _DEFAULT_ROBOT_CFG = SceneEntityCfg("robot")
 
 
+class randomize_paddle_mount_position:
+    """Randomize paddle body mount position in the hand frame at reset."""
+
+    def __init__(self, cfg, env: ManagerBasedRlEnv):
+        params = cfg.params
+        robot_cfg = params.get("robot_cfg", _DEFAULT_ROBOT_CFG)
+        paddle_body_name = params.get("paddle_body_name", "paddle")
+
+        robot: Entity = env.scene[robot_cfg.name]
+        body_ids, _ = robot.find_bodies(paddle_body_name)
+        if len(body_ids) == 0:
+            raise RuntimeError(f"{paddle_body_name} body not found on robot entity")
+        self._paddle_body_idx = body_ids[0]
+
+        default_body_pos = env.sim.get_default_field("body_pos")
+        self._default_mount_pos = default_body_pos[self._paddle_body_idx].clone().to(env.device)
+
+    def __call__(
+        self,
+        env: ManagerBasedRlEnv,
+        env_ids: torch.Tensor | None,
+        x_range: tuple[float, float] = (-0.02, 0.02),
+        y_range: tuple[float, float] = (-0.02, 0.02),
+        z_range: tuple[float, float] = (-0.01, 0.01),
+        **_,
+    ) -> None:
+        if env_ids is None:
+            env_ids = torch.arange(env.num_envs, device=env.device, dtype=torch.int)
+        else:
+            env_ids = env_ids.to(device=env.device, dtype=torch.int)
+
+        num = len(env_ids)
+        if num == 0:
+            return
+
+        offsets = torch.stack(
+            [
+                sample_uniform(
+                    torch.full((num,), x_range[0], device=env.device),
+                    torch.full((num,), x_range[1], device=env.device),
+                    (num,),
+                    device=env.device,
+                ),
+                sample_uniform(
+                    torch.full((num,), y_range[0], device=env.device),
+                    torch.full((num,), y_range[1], device=env.device),
+                    (num,),
+                    device=env.device,
+                ),
+                sample_uniform(
+                    torch.full((num,), z_range[0], device=env.device),
+                    torch.full((num,), z_range[1], device=env.device),
+                    (num,),
+                    device=env.device,
+                ),
+            ],
+            dim=-1,
+        )  # [B, 3]
+
+        model_body_pos = env.sim.model.body_pos
+        mount_pos = self._default_mount_pos.unsqueeze(0) + offsets
+
+        if len(model_body_pos.shape) == 3:
+            model_body_pos[env_ids, self._paddle_body_idx, :] = mount_pos
+        elif len(model_body_pos.shape) == 2:
+            model_body_pos[self._paddle_body_idx, :] = mount_pos[0]
+        else:
+            raise RuntimeError(f"Unexpected body_pos shape: {tuple(model_body_pos.shape)}")
+
+
 def reset_root_state_uniform_no_env_origins(
     env: ManagerBasedRlEnv,
     env_ids: torch.Tensor | None,

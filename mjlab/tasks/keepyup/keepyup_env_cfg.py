@@ -177,7 +177,7 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
             mode="reset",
             params={
                 # Randomize elbow start around its nominal target.
-                "position_range": (-0.15, 0.15),
+                "position_range": (-0.09, 0.09),
                 "velocity_range": (0.0, 0.0),
                 "asset_cfg": SceneEntityCfg(
                     "robot",
@@ -189,8 +189,8 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
             func=mdp.reset_joints_by_offset,
             mode="reset",
             params={
-                # Randomize wrist orientation by +/- 10 degrees on roll/pitch/yaw.
-                "position_range": (-math.radians(10.0), math.radians(10.0)),
+                # Randomize wrist orientation by +/- 6 degrees on roll/pitch/yaw.
+                "position_range": (-math.radians(6.0), math.radians(6.0)),
                 "velocity_range": (0.0, 0.0),
                 "asset_cfg": SceneEntityCfg(
                     "robot",
@@ -227,22 +227,17 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
                 ),
             },
         ),
-        "wrist_micro_drift": EventTermCfg(
-            func=mdp.reset_joints_by_offset,
-            mode="interval",
-            # Apply tiny wrist perturbations to emulate grip compliance/slippage.
-            interval_range_s=(0.35, 0.75),
+        "reset_paddle_position_variation": EventTermCfg(
+            func=mdp.randomize_paddle_mount_position,
+            mode="reset",
             params={
-                "position_range": (-math.radians(1.25), math.radians(1.25)),
-                "velocity_range": (0.0, 0.0),
-                "asset_cfg": SceneEntityCfg(
-                    "robot",
-                    joint_names=(
-                        "left_wrist_roll_joint",
-                        "left_wrist_pitch_joint",
-                        "left_wrist_yaw_joint",
-                    ),
-                ),
+                # Temporary large range to visibly verify the effect in viewer.
+                # We can reduce back to realistic cm-scale once confirmed.
+                "x_range": (-0.30, 0.30),
+                "y_range": (-0.30, 0.30),
+                "z_range": (-0.30, 0.30),
+                "robot_cfg": SceneEntityCfg("robot"),
+                "paddle_body_name": "paddle",
             },
         ),
         "reset_ball": EventTermCfg(
