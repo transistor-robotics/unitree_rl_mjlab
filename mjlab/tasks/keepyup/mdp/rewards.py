@@ -42,6 +42,14 @@ class bounce_event_reward:
             (env.num_envs,), 10_000, dtype=torch.int32, device=env.device
         )
         
+    def reset(self, env_ids: torch.Tensor | slice | None = None) -> None:
+        if env_ids is None:
+            self.prev_contact[:] = False
+            self.steps_since_rewarded_bounce[:] = 10_000
+        else:
+            self.prev_contact[env_ids] = False
+            self.steps_since_rewarded_bounce[env_ids] = 10_000
+
     def __call__(
         self,
         env: ManagerBasedRlEnv,
@@ -118,6 +126,14 @@ class bounce_quality_reward:
         self.steps_since_rewarded = torch.full(
             (env.num_envs,), 10_000, dtype=torch.int32, device=env.device
         )
+
+    def reset(self, env_ids: torch.Tensor | slice | None = None) -> None:
+        if env_ids is None:
+            self.prev_contact[:] = False
+            self.steps_since_rewarded[:] = 10_000
+        else:
+            self.prev_contact[env_ids] = False
+            self.steps_since_rewarded[env_ids] = 10_000
 
     def __call__(
         self,
@@ -350,6 +366,12 @@ class sustained_contact_penalty:
             env.num_envs, dtype=torch.int32, device=env.device
         )
         
+    def reset(self, env_ids: torch.Tensor | slice | None = None) -> None:
+        if env_ids is None:
+            self.consecutive_contact[:] = 0
+        else:
+            self.consecutive_contact[env_ids] = 0
+
     def __call__(
         self,
         env: ManagerBasedRlEnv,
@@ -380,8 +402,9 @@ class sustained_contact_penalty:
         # Log metrics
         max_consecutive = torch.max(self.consecutive_contact.float())
         mean_consecutive = torch.mean(self.consecutive_contact.float())
-        env.extras["log"]["Metrics/max_consecutive_contact"] = max_consecutive
-        env.extras["log"]["Metrics/mean_consecutive_contact"] = mean_consecutive
+        log = env.extras.setdefault("log", {})
+        log["Metrics/max_consecutive_contact"] = max_consecutive
+        log["Metrics/mean_consecutive_contact"] = mean_consecutive
         
         return penalty
 

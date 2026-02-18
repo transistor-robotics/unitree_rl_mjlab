@@ -243,11 +243,10 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
                 # Targeted ballistic reset settings.
                 "hit_probability": 0.8,
                 "entry_angle_deg_range": (0.0, 25.0),
-                "time_to_impact_range": (0.30, 0.52),
                 "hit_radius_fraction": 0.7,
                 "miss_radius_range": (0.085, 0.13),
-                # Delay first impact so joints settle after reset.
-                "time_to_impact_range": (1.05, 1.20),
+                # Curriculum stage 0 overrides this; base default matches final stage.
+                "time_to_impact_range": (0.30, 0.52),
             },
         ),
         "randomize_ball_bounciness": EventTermCfg(
