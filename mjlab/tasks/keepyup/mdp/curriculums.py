@@ -35,6 +35,18 @@ class BallSpawnStage(TypedDict, total=False):
     entry_angle_deg_range: tuple[float, float]
 
 
+class BounceQualityStage(TypedDict, total=False):
+    """Stage definition for bounce_quality_reward curriculum."""
+
+    step: int
+    apex_std: float
+    velocity_std: float
+    vel_weight: float
+    vert_std: float
+    vert_weight: float
+    min_upward_velocity: float
+
+
 class BounceRewardStage(TypedDict, total=False):
     """Stage definition for bounce-discovery reward shaping."""
 
@@ -47,6 +59,51 @@ class BounceRewardStage(TypedDict, total=False):
     min_apex_height: float
     min_apex_gain: float
     target_upward_velocity: float
+
+
+def bounce_quality_schedule(
+    env: ManagerBasedRlEnv,
+    env_ids: torch.Tensor | slice | None,
+    stages: list[BounceQualityStage],
+    reward_term_name: str = "bounce_quality",
+) -> dict[str, float]:
+    """Progressively tighten bounce_quality_reward criteria over training.
+
+    Starts very forgiving (any upward rebound near the apex scores well) and
+    tightens three knobs over curriculum stages:
+
+    - ``apex_std``         — narrows the apex Gaussian (strictness of height).
+    - ``vel_weight``       — blends in velocity scoring (0=ignored, 1=full).
+    - ``vert_weight``      — blends in verticality scoring (0=ignored, 1=full).
+    - ``min_upward_velocity`` — raises the minimum threshold to reject micro-taps.
+    """
+    del env_ids  # Unused. Curriculum is global.
+
+    current_step = env.common_step_counter
+    active_stage_idx = 0
+    for i, stage in enumerate(stages):
+        if current_step >= stage["step"]:
+            active_stage_idx = i
+        else:
+            break
+    active = stages[active_stage_idx]
+
+    try:
+        term_cfg = env.reward_manager.get_term_cfg(reward_term_name)
+    except ValueError:
+        return {}
+
+    for key in ("apex_std", "velocity_std", "vel_weight", "vert_std", "vert_weight", "min_upward_velocity"):
+        if active.get(key) is not None:
+            term_cfg.params[key] = float(active[key])
+
+    return {
+        "stage_idx": float(active_stage_idx),
+        "apex_std": float(term_cfg.params.get("apex_std", -1.0)),
+        "vel_weight": float(term_cfg.params.get("vel_weight", -1.0)),
+        "vert_weight": float(term_cfg.params.get("vert_weight", -1.0)),
+        "min_upward_velocity": float(term_cfg.params.get("min_upward_velocity", -1.0)),
+    }
 
 
 def ball_state_noise_schedule(

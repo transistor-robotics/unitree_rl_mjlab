@@ -141,12 +141,36 @@ class bounce_quality_reward:
         sensor_name: str,
         ball_cfg: SceneEntityCfg = _DEFAULT_BALL_CFG,
         target_apex_height: float = 1.42,
-        apex_std: float = 0.12,
+        apex_std: float = 0.50,
         target_upward_velocity: float = 1.75,
-        velocity_std: float = 0.40,
-        min_upward_velocity: float = 0.4,
-        min_reward_interval_steps: int = 8,
+        velocity_std: float = 0.60,
+        vel_weight: float = 0.0,
+        vert_std: float = 2.0,
+        vert_weight: float = 0.0,
+        min_upward_velocity: float = 0.05,
+        min_reward_interval_steps: int = 5,
     ) -> torch.Tensor:
+        """Compute bounce quality reward.
+
+        Three curriculum-controlled knobs blend in over training:
+
+        - ``apex_std``: How close the predicted apex must be to ``target_apex_height``.
+          Wide early (forgiving), narrows later (strict). The apex score is always
+          the primary driver.
+
+        - ``vel_weight`` + ``velocity_std``: How much upward speed matters. At
+          ``vel_weight=0`` the velocity Gaussian is ignored entirely; at 1 it
+          contributes fully. Blended as: ``lerp(1.0, vel_score, vel_weight)``.
+
+        - ``vert_weight`` + ``vert_std``: How vertical the ball's trajectory must be.
+          Scored via lateral speed ``vxy = sqrt(vx^2 + vy^2)`` at separation — a
+          perfectly vertical bounce has vxy=0 and scores 1.0. At ``vert_weight=0``
+          this is completely ignored; at 1 it fully penalises sideways deflections.
+          Blended as: ``lerp(1.0, vert_score, vert_weight)``.
+
+        Combined: ``quality = apex_score * lerp(1, vel_score, vel_weight)
+                                           * lerp(1, vert_score, vert_weight)``
+        """
         contact_sensor: ContactSensor = env.scene[sensor_name]
         assert contact_sensor.data.found is not None
 
@@ -154,16 +178,30 @@ class bounce_quality_reward:
         bounce_completed = self.prev_contact & ~current_contact
 
         ball: Entity = env.scene[ball_cfg.name]
+        ball_vel_w = ball.data.root_link_lin_vel_w
         ball_z = ball.data.root_link_pos_w[:, 2]
-        ball_vz = ball.data.root_link_lin_vel_w[:, 2]
+        ball_vz = ball_vel_w[:, 2]
+        ball_vxy = torch.norm(ball_vel_w[:, :2], dim=-1)
+
         upward_vz = torch.clamp(ball_vz, min=0.0)
         predicted_apex = ball_z + torch.square(upward_vz) / (2.0 * 9.81)
 
-        apex_score = torch.exp(-torch.square(predicted_apex - target_apex_height) / (apex_std ** 2))
+        # Primary: how close will the ball apex to the target height?
+        apex_score = torch.exp(
+            -torch.square(predicted_apex - target_apex_height) / (apex_std ** 2)
+        )
+
+        # Secondary (curriculum-blended): how fast is the ball going upward?
         vel_score = torch.exp(
             -torch.square(upward_vz - target_upward_velocity) / (velocity_std ** 2)
         )
-        quality = apex_score * vel_score
+        vel_contrib = vel_weight * vel_score + (1.0 - vel_weight)
+
+        # Tertiary (curriculum-blended): how vertical is the trajectory?
+        vert_score = torch.exp(-torch.square(ball_vxy) / (vert_std ** 2))
+        vert_contrib = vert_weight * vert_score + (1.0 - vert_weight)
+
+        quality = apex_score * vel_contrib * vert_contrib
 
         cooldown_ok = self.steps_since_rewarded >= min_reward_interval_steps
         valid = upward_vz >= min_upward_velocity
@@ -177,10 +215,13 @@ class bounce_quality_reward:
 
         log = env.extras.setdefault("log", {})
         log["Metrics/predicted_apex_mean"] = predicted_apex.mean()
-        log["Metrics/bounce_quality_mean"] = quality.mean()
-        log["Metrics/rewarded_bounce_quality_mean"] = torch.where(
-            rewarded, quality, torch.zeros_like(quality)
-        ).sum() / torch.clamp(rewarded.float().sum(), min=1.0)
+        log["Metrics/ball_vxy_mean"] = ball_vxy.mean()
+        log["Metrics/bounce_events_per_step"] = bounce_completed.float().mean()
+        log["Metrics/rewarded_bounces_per_step"] = rewarded.float().mean()
+        log["Metrics/rewarded_bounce_quality_mean"] = (
+            torch.where(rewarded, quality, torch.zeros_like(quality)).sum()
+            / torch.clamp(rewarded.float().sum(), min=1.0)
+        )
         return reward
 
 
@@ -252,52 +293,6 @@ class bounce_discovery_reward:
         log["Metrics/discovery_rewarded_events"] = rewarded.float().mean()
         log["Metrics/discovery_predicted_apex_mean"] = predicted_apex.mean()
         return reward
-
-
-class lateral_drift_penalty:
-    """Penalize lateral ball speed shortly after contact release."""
-
-    def __init__(self, cfg: RewardTermCfg, env: ManagerBasedRlEnv):
-        self.prev_contact = torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
-        self.post_bounce_window = torch.zeros(env.num_envs, dtype=torch.int32, device=env.device)
-
-    def reset(self, env_ids: torch.Tensor | slice | None = None) -> None:
-        if env_ids is None:
-            self.prev_contact[:] = False
-            self.post_bounce_window[:] = 0
-        else:
-            self.prev_contact[env_ids] = False
-            self.post_bounce_window[env_ids] = 0
-
-    def __call__(
-        self,
-        env: ManagerBasedRlEnv,
-        sensor_name: str,
-        ball_cfg: SceneEntityCfg = _DEFAULT_BALL_CFG,
-        post_bounce_window_steps: int = 5,
-        deadband: float = 0.05,
-    ) -> torch.Tensor:
-        contact_sensor: ContactSensor = env.scene[sensor_name]
-        assert contact_sensor.data.found is not None
-        current_contact = contact_sensor.data.found.squeeze(-1) > 0
-        bounce_completed = self.prev_contact & ~current_contact
-
-        # Open a short phase window immediately after release, then decay.
-        new_window = torch.full_like(self.post_bounce_window, post_bounce_window_steps)
-        decayed_window = torch.clamp(self.post_bounce_window - 1, min=0)
-        self.post_bounce_window = torch.where(bounce_completed, new_window, decayed_window)
-        active = self.post_bounce_window > 0
-
-        ball: Entity = env.scene[ball_cfg.name]
-        vxy = torch.norm(ball.data.root_link_lin_vel_w[:, :2], dim=-1)
-        penalty = torch.clamp(vxy - deadband, min=0.0)
-
-        self.prev_contact = current_contact
-
-        log = env.extras.setdefault("log", {})
-        log["Metrics/lateral_speed_mean"] = vxy.mean()
-        log["Metrics/lateral_penalty_active_rate"] = active.float().mean()
-        return torch.where(active, penalty, torch.zeros_like(penalty))
 
 
 class under_ball_alignment_reward:

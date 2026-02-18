@@ -274,17 +274,20 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
             params={
                 "sensor_name": "paddle_ball_contact",
                 "ball_cfg": SceneEntityCfg("ball"),
-                # Camera-aware apex shaping: keep arc in a lower, repeatable band.
                 "target_apex_height": 1.42,
-                "apex_std": 0.18,
                 "target_upward_velocity": 1.75,
-                "velocity_std": 0.60,
-                "min_upward_velocity": 0.2,
                 "min_reward_interval_steps": 5,
+                # Curriculum stage 0 overrides all values below at first reset.
+                # Defaults here match stage 0 (most forgiving).
+                "apex_std": 0.50,
+                "velocity_std": 0.60,
+                "vel_weight": 0.0,
+                "vert_std": 2.0,
+                "vert_weight": 0.0,
+                "min_upward_velocity": 0.05,
             },
         ),
         # Scaffolding helpers — disabled while focusing on core bounce signal.
-        "lateral_drift": None,
         "under_ball_alignment": None,
         "strike_plane_hold": None,
         "upward_chase": RewardTermCfg(
@@ -328,6 +331,57 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
     ##
 
     curriculum = {
+        "bounce_quality": CurriculumTermCfg(
+            func=mdp.bounce_quality_schedule,
+            params={
+                "stages": [
+                    {
+                        # Stage 0: apex is the only thing that matters.
+                        # Any upward rebound that reaches somewhere near the target
+                        # height scores well. Velocity and direction are ignored.
+                        "step": 0,
+                        "apex_std": 0.50,
+                        "velocity_std": 0.60,
+                        "vel_weight": 0.0,
+                        "vert_std": 2.0,
+                        "vert_weight": 0.0,
+                        "min_upward_velocity": 0.05,
+                    },
+                    {
+                        # Stage 1: begin caring a little about upward speed.
+                        # Direction still irrelevant — sideways bounces still earn.
+                        "step": 300 * 24,
+                        "apex_std": 0.35,
+                        "velocity_std": 0.60,
+                        "vel_weight": 0.30,
+                        "vert_std": 2.0,
+                        "vert_weight": 0.0,
+                        "min_upward_velocity": 0.12,
+                    },
+                    {
+                        # Stage 2: velocity fully matters; start penalising sideways
+                        # deflections gently.
+                        "step": 900 * 24,
+                        "apex_std": 0.25,
+                        "velocity_std": 0.60,
+                        "vel_weight": 0.65,
+                        "vert_std": 1.2,
+                        "vert_weight": 0.25,
+                        "min_upward_velocity": 0.22,
+                    },
+                    {
+                        # Stage 3: full strictness — fast, straight, on-target arc.
+                        "step": 1500 * 24,
+                        "apex_std": 0.18,
+                        "velocity_std": 0.60,
+                        "vel_weight": 1.0,
+                        "vert_std": 0.70,
+                        "vert_weight": 0.60,
+                        "min_upward_velocity": 0.35,
+                    },
+                ],
+            },
+        ),
         "ball_state_noise": CurriculumTermCfg(
             func=mdp.ball_state_noise_schedule,
             params={
