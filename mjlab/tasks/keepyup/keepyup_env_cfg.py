@@ -287,9 +287,33 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
                 "min_reward_interval_steps": 5,
             },
         ),
+        "bounce_discovery": RewardTermCfg(
+            func=mdp.bounce_discovery_reward,
+            weight=3.0,
+            params={
+                "sensor_name": "paddle_ball_contact",
+                "ball_cfg": SceneEntityCfg("ball"),
+                # Forgiving early signal: reward any clean upward rebound.
+                "min_upward_velocity": 0.08,
+                "min_apex_height": 0.95,
+                "min_apex_gain": 0.04,
+                "target_upward_velocity": 1.0,
+                "min_reward_interval_steps": 3,
+            },
+        ),
+        "lateral_drift": RewardTermCfg(
+            func=mdp.lateral_drift_penalty,
+            weight=-0.25,
+            params={
+                "sensor_name": "paddle_ball_contact",
+                "ball_cfg": SceneEntityCfg("ball"),
+                "post_bounce_window_steps": 5,
+                "deadband": 0.05,
+            },
+        ),
         "under_ball_alignment": RewardTermCfg(
             func=mdp.under_ball_alignment_reward,
-            weight=0.15,
+            weight=0.12,
             params={
                 "std_xy": 0.12,
                 "min_descending_speed": 0.05,
@@ -301,7 +325,7 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
         ),
         "strike_plane_hold": RewardTermCfg(
             func=mdp.strike_plane_hold_reward,
-            weight=0.05,
+            weight=0.04,
             params={
                 "target_paddle_height": 0.80,
                 "std": 0.08,
@@ -330,7 +354,7 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
         ),
         "self_collisions": RewardTermCfg(
             func=mdp.self_collision_cost,
-            weight=-0.35,
+            weight=-0.45,
             params={"sensor_name": "self_collision"},
         ),
         "action_rate_l2": RewardTermCfg(
@@ -468,6 +492,61 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
                         "miss_radius_range": (0.085, 0.13),
                         "entry_angle_deg_range": (0.0, 25.0),
                         "time_to_impact_range": (0.30, 0.52),
+                    },
+                ],
+            },
+        ),
+        "bounce_reward_shaping": CurriculumTermCfg(
+            func=mdp.bounce_reward_shaping_schedule,
+            params={
+                "stages": [
+                    # Stage 0: strong discovery signal, very forgiving thresholds.
+                    {
+                        "step": 0,
+                        "discovery_weight": 3.0,
+                        "lateral_weight": -0.25,
+                        "under_ball_weight": 0.12,
+                        "strike_plane_weight": 0.04,
+                        "min_upward_velocity": 0.08,
+                        "min_apex_height": 0.95,
+                        "min_apex_gain": 0.04,
+                        "target_upward_velocity": 1.00,
+                    },
+                    # Stage 1: start tightening after discovery.
+                    {
+                        "step": 300 * 24,
+                        "discovery_weight": 2.4,
+                        "lateral_weight": -0.30,
+                        "under_ball_weight": 0.11,
+                        "strike_plane_weight": 0.038,
+                        "min_upward_velocity": 0.12,
+                        "min_apex_height": 1.05,
+                        "min_apex_gain": 0.08,
+                        "target_upward_velocity": 1.20,
+                    },
+                    # Stage 2: intermediate strictness.
+                    {
+                        "step": 900 * 24,
+                        "discovery_weight": 1.8,
+                        "lateral_weight": -0.35,
+                        "under_ball_weight": 0.10,
+                        "strike_plane_weight": 0.035,
+                        "min_upward_velocity": 0.18,
+                        "min_apex_height": 1.15,
+                        "min_apex_gain": 0.12,
+                        "target_upward_velocity": 1.40,
+                    },
+                    # Stage 3: strictest discovery gate, lower helper reliance.
+                    {
+                        "step": 1500 * 24,
+                        "discovery_weight": 1.2,
+                        "lateral_weight": -0.40,
+                        "under_ball_weight": 0.09,
+                        "strike_plane_weight": 0.03,
+                        "min_upward_velocity": 0.24,
+                        "min_apex_height": 1.22,
+                        "min_apex_gain": 0.16,
+                        "target_upward_velocity": 1.60,
                     },
                 ],
             },

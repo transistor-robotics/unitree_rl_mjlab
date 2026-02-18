@@ -184,6 +184,122 @@ class bounce_quality_reward:
         return reward
 
 
+class bounce_discovery_reward:
+    """Reward any upward rebound event, with curriculum-tightened thresholds."""
+
+    def __init__(self, cfg: RewardTermCfg, env: ManagerBasedRlEnv):
+        self.prev_contact = torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
+        self.steps_since_rewarded = torch.full(
+            (env.num_envs,), 10_000, dtype=torch.int32, device=env.device
+        )
+
+    def reset(self, env_ids: torch.Tensor | slice | None = None) -> None:
+        if env_ids is None:
+            self.prev_contact[:] = False
+            self.steps_since_rewarded[:] = 10_000
+        else:
+            self.prev_contact[env_ids] = False
+            self.steps_since_rewarded[env_ids] = 10_000
+
+    def __call__(
+        self,
+        env: ManagerBasedRlEnv,
+        sensor_name: str,
+        ball_cfg: SceneEntityCfg = _DEFAULT_BALL_CFG,
+        min_upward_velocity: float = 0.08,
+        min_apex_height: float = 0.95,
+        min_apex_gain: float = 0.04,
+        target_upward_velocity: float = 1.0,
+        min_reward_interval_steps: int = 3,
+    ) -> torch.Tensor:
+        contact_sensor: ContactSensor = env.scene[sensor_name]
+        assert contact_sensor.data.found is not None
+
+        current_contact = contact_sensor.data.found.squeeze(-1) > 0
+        bounce_completed = self.prev_contact & ~current_contact
+
+        ball: Entity = env.scene[ball_cfg.name]
+        ball_z = ball.data.root_link_pos_w[:, 2]
+        ball_vel = ball.data.root_link_lin_vel_w
+        ball_vz = ball_vel[:, 2]
+        upward_vz = torch.clamp(ball_vz, min=0.0)
+        predicted_apex = ball_z + torch.square(upward_vz) / (2.0 * 9.81)
+        apex_gain = predicted_apex - ball_z
+
+        cooldown_ok = self.steps_since_rewarded >= min_reward_interval_steps
+        valid = (
+            (upward_vz >= min_upward_velocity)
+            & (predicted_apex >= min_apex_height)
+            & (apex_gain >= min_apex_gain)
+        )
+        rewarded = bounce_completed & valid & cooldown_ok
+
+        # Provide a gentle shaping signal from weak to stronger rebounds.
+        vel_scale = torch.clamp(
+            (upward_vz - min_upward_velocity) / max(target_upward_velocity - min_upward_velocity, 1e-6),
+            min=0.0,
+            max=1.0,
+        )
+        reward = torch.where(rewarded, vel_scale, torch.zeros_like(vel_scale))
+
+        self.prev_contact = current_contact
+        self.steps_since_rewarded = torch.where(
+            rewarded, torch.zeros_like(self.steps_since_rewarded), self.steps_since_rewarded + 1
+        )
+
+        log = env.extras.setdefault("log", {})
+        log["Metrics/discovery_bounce_events"] = bounce_completed.float().mean()
+        log["Metrics/discovery_rewarded_events"] = rewarded.float().mean()
+        log["Metrics/discovery_predicted_apex_mean"] = predicted_apex.mean()
+        return reward
+
+
+class lateral_drift_penalty:
+    """Penalize lateral ball speed shortly after contact release."""
+
+    def __init__(self, cfg: RewardTermCfg, env: ManagerBasedRlEnv):
+        self.prev_contact = torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
+        self.post_bounce_window = torch.zeros(env.num_envs, dtype=torch.int32, device=env.device)
+
+    def reset(self, env_ids: torch.Tensor | slice | None = None) -> None:
+        if env_ids is None:
+            self.prev_contact[:] = False
+            self.post_bounce_window[:] = 0
+        else:
+            self.prev_contact[env_ids] = False
+            self.post_bounce_window[env_ids] = 0
+
+    def __call__(
+        self,
+        env: ManagerBasedRlEnv,
+        sensor_name: str,
+        ball_cfg: SceneEntityCfg = _DEFAULT_BALL_CFG,
+        post_bounce_window_steps: int = 5,
+        deadband: float = 0.05,
+    ) -> torch.Tensor:
+        contact_sensor: ContactSensor = env.scene[sensor_name]
+        assert contact_sensor.data.found is not None
+        current_contact = contact_sensor.data.found.squeeze(-1) > 0
+        bounce_completed = self.prev_contact & ~current_contact
+
+        # Open a short phase window immediately after release, then decay.
+        new_window = torch.full_like(self.post_bounce_window, post_bounce_window_steps)
+        decayed_window = torch.clamp(self.post_bounce_window - 1, min=0)
+        self.post_bounce_window = torch.where(bounce_completed, new_window, decayed_window)
+        active = self.post_bounce_window > 0
+
+        ball: Entity = env.scene[ball_cfg.name]
+        vxy = torch.norm(ball.data.root_link_lin_vel_w[:, :2], dim=-1)
+        penalty = torch.clamp(vxy - deadband, min=0.0)
+
+        self.prev_contact = current_contact
+
+        log = env.extras.setdefault("log", {})
+        log["Metrics/lateral_speed_mean"] = vxy.mean()
+        log["Metrics/lateral_penalty_active_rate"] = active.float().mean()
+        return torch.where(active, penalty, torch.zeros_like(penalty))
+
+
 class under_ball_alignment_reward:
     """Reward paddle XY alignment under a descending ball near strike zone."""
 

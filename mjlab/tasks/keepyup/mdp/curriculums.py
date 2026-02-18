@@ -36,6 +36,20 @@ class BallSpawnStage(TypedDict, total=False):
     time_to_impact_range: tuple[float, float]
 
 
+class BounceRewardStage(TypedDict, total=False):
+    """Stage definition for bounce-discovery reward shaping."""
+
+    step: int
+    discovery_weight: float
+    lateral_weight: float
+    under_ball_weight: float
+    strike_plane_weight: float
+    min_upward_velocity: float
+    min_apex_height: float
+    min_apex_gain: float
+    target_upward_velocity: float
+
+
 def ball_state_noise_schedule(
     env: ManagerBasedRlEnv,
     env_ids: torch.Tensor | slice | None,
@@ -156,4 +170,76 @@ def ball_spawn_difficulty_schedule(
         "spawn_x_span": float(pose_range.get("x", (0.0, 0.0))[1] - pose_range.get("x", (0.0, 0.0))[0]),
         "spawn_y_span": float(pose_range.get("y", (0.0, 0.0))[1] - pose_range.get("y", (0.0, 0.0))[0]),
         "spawn_z_span": float(pose_range.get("z", (0.0, 0.0))[1] - pose_range.get("z", (0.0, 0.0))[0]),
+    }
+
+
+def bounce_reward_shaping_schedule(
+    env: ManagerBasedRlEnv,
+    env_ids: torch.Tensor | slice | None,
+    stages: list[BounceRewardStage],
+    discovery_term_name: str = "bounce_discovery",
+    lateral_term_name: str = "lateral_drift",
+    under_ball_term_name: str = "under_ball_alignment",
+    strike_plane_term_name: str = "strike_plane_hold",
+) -> dict[str, float]:
+    """Progressively tighten bounce-discovery criteria and helper-term weights."""
+
+    del env_ids  # Unused. Curriculum is global.
+
+    current_step = env.common_step_counter
+    active_stage_idx = 0
+    for i, stage in enumerate(stages):
+        if current_step >= stage["step"]:
+            active_stage_idx = i
+        else:
+            break
+    active = stages[active_stage_idx]
+
+    def _maybe_get_reward_cfg(term_name: str):
+        try:
+            return env.reward_manager.get_term_cfg(term_name)
+        except ValueError:
+            return None
+
+    discovery_cfg = _maybe_get_reward_cfg(discovery_term_name)
+    if discovery_cfg is not None:
+        if active.get("discovery_weight") is not None:
+            discovery_cfg.weight = float(active["discovery_weight"])
+        if active.get("min_upward_velocity") is not None:
+            discovery_cfg.params["min_upward_velocity"] = float(active["min_upward_velocity"])
+        if active.get("min_apex_height") is not None:
+            discovery_cfg.params["min_apex_height"] = float(active["min_apex_height"])
+        if active.get("min_apex_gain") is not None:
+            discovery_cfg.params["min_apex_gain"] = float(active["min_apex_gain"])
+        if active.get("target_upward_velocity") is not None:
+            discovery_cfg.params["target_upward_velocity"] = float(active["target_upward_velocity"])
+
+    lateral_cfg = _maybe_get_reward_cfg(lateral_term_name)
+    if lateral_cfg is not None and active.get("lateral_weight") is not None:
+        lateral_cfg.weight = float(active["lateral_weight"])
+
+    under_ball_cfg = _maybe_get_reward_cfg(under_ball_term_name)
+    if under_ball_cfg is not None and active.get("under_ball_weight") is not None:
+        under_ball_cfg.weight = float(active["under_ball_weight"])
+
+    strike_plane_cfg = _maybe_get_reward_cfg(strike_plane_term_name)
+    if strike_plane_cfg is not None and active.get("strike_plane_weight") is not None:
+        strike_plane_cfg.weight = float(active["strike_plane_weight"])
+
+    return {
+        "stage_idx": float(active_stage_idx),
+        "discovery_weight": float(discovery_cfg.weight) if discovery_cfg is not None else -1.0,
+        "lateral_weight": float(lateral_cfg.weight) if lateral_cfg is not None else -1.0,
+        "under_ball_weight": float(under_ball_cfg.weight) if under_ball_cfg is not None else -1.0,
+        "strike_plane_weight": float(strike_plane_cfg.weight) if strike_plane_cfg is not None else -1.0,
+        "discovery_min_upward_vz": (
+            float(discovery_cfg.params.get("min_upward_velocity", -1.0))
+            if discovery_cfg is not None
+            else -1.0
+        ),
+        "discovery_min_apex_height": (
+            float(discovery_cfg.params.get("min_apex_height", -1.0))
+            if discovery_cfg is not None
+            else -1.0
+        ),
     }
