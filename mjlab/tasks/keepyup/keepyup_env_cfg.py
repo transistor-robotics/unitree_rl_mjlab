@@ -228,19 +228,6 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
                 ),
             },
         ),
-        "reset_paddle_position_variation": EventTermCfg(
-            func=mdp.randomize_paddle_mount_position,
-            mode="reset",
-            params={
-                # Temporary large range to visibly verify the effect in viewer.
-                # We can reduce back to realistic cm-scale once confirmed.
-                "x_range": (-0.30, 0.30),
-                "y_range": (-0.30, 0.30),
-                "z_range": (-0.30, 0.30),
-                "robot_cfg": SceneEntityCfg("robot"),
-                "paddle_body_name": "paddle",
-            },
-        ),
         "reset_ball": EventTermCfg(
             func=mdp.reset_ball_targeted_to_paddle,
             mode="reset",
