@@ -286,23 +286,9 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
                 "min_reward_interval_steps": 5,
             },
         ),
-        "contact_impulse": RewardTermCfg(
-            func=mdp.contact_impulse_reward,
-            weight=3.0,
-            params={
-                "sensor_name": "paddle_ball_contact",
-                "ball_cfg": SceneEntityCfg("ball"),
-                "min_pre_descending_speed": 0.20,
-                "min_delta_vz": 0.55,
-                "target_delta_vz": 1.70,
-                "min_post_upward_speed": 0.25,
-                "target_post_upward_speed": 1.10,
-                "min_reward_interval_steps": 4,
-            },
-        ),
         "under_ball_alignment": RewardTermCfg(
             func=mdp.under_ball_alignment_reward,
-            weight=1.2,
+            weight=0.15,
             params={
                 "std_xy": 0.12,
                 "min_descending_speed": 0.05,
@@ -314,7 +300,7 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
         ),
         "strike_plane_hold": RewardTermCfg(
             func=mdp.strike_plane_hold_reward,
-            weight=0.45,
+            weight=0.05,
             params={
                 "target_paddle_height": 0.80,
                 "std": 0.08,
@@ -328,19 +314,7 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
             func=mdp.upward_chase_penalty,
             weight=-1.2,
             params={
-                "ball_ascending_threshold": 0.05,
-                "robot_cfg": SceneEntityCfg("robot"),
-                "ball_cfg": SceneEntityCfg("ball"),
-            },
-        ),
-        "apex_clearance_target": RewardTermCfg(
-            func=mdp.apex_clearance_target_reward,
-            weight=0.7,
-            params={
-                "target_clearance": 0.45,
-                "std": 0.10,
-                "apex_vz_window": 0.18,
-                "min_ball_height": 1.00,
+                "ball_ascending_threshold": 0.10,
                 "robot_cfg": SceneEntityCfg("robot"),
                 "ball_cfg": SceneEntityCfg("ball"),
             },
