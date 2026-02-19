@@ -168,10 +168,7 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
                 "velocity_range": (0.0, 0.0),
                 "asset_cfg": SceneEntityCfg("ball"),
                 "robot_cfg": SceneEntityCfg("robot"),
-                "spawn_height": 0.70,
-                # Stage 0 curriculum keeps both variances at 0 (center drop).
-                # Variances are in paddle local frame (frontal/lateral),
-                # while spawn_height is world +Z (vertical).
+                "spawn_height": 0.0,
                 "lateral_spawn_variance": 0.0,
                 "frontal_spawn_variance": 0.0,
                 "throw_origin_distance": 0.0,
@@ -221,7 +218,9 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
             weight=1.0,
             params={"sensor_name": "paddle_ball_contact"},
         ),
-        "ball_height": RewardTermCfg(func=mdp.ball_height_reward, weight=1.2),
+        "ball_height": RewardTermCfg(
+            func=mdp.ball_height_reward, weight=1.2, params={"target_height": 1.4}
+        ),
         "bounce_rhythm": RewardTermCfg(
             func=mdp.bounce_rhythm_reward,
             weight=1.0,
@@ -334,31 +333,36 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
                 "stages": [
                     {
                         # Stage 0: no lateral/frontal offset.
+                        # Spawn height quite high to give plenty of time to react
                         "step": 0,
-                        "lateral_spawn_variance": 0.0,
-                        "frontal_spawn_variance": 0.0,
+                        "lateral_spawn_variance": 0.2,
+                        "frontal_spawn_variance": 0.2,
                         "throw_origin_distance": 0.0,
+                        "spawn_height": 2.0,
                     },
                     {
                         # Stage 1: light randomness around paddle center.
                         "step": 300 * 24,
-                        "lateral_spawn_variance": 0.2,
+                        "lateral_spawn_variance": 0.6,
                         "frontal_spawn_variance": 0.4,
-                        "throw_origin_distance": 0.2,
+                        "throw_origin_distance": 0.15,
+                        "spawn_height": 1.4,
                     },
                     {
                         # Stage 2: moderate offset variance.
                         "step": 900 * 24,
-                        "lateral_spawn_variance": 0.5,
+                        "lateral_spawn_variance": 1.0,
                         "frontal_spawn_variance": 0.7,
                         "throw_origin_distance": 0.5,
+                        "spawn_height": 1.0,
                     },
                     {
                         # Stage 3: full configured spawn variance.
-                        "step": 1500 * 24,
+                        "step": 1600 * 24,
                         "lateral_spawn_variance": 1.0,
                         "frontal_spawn_variance": 1.0,
                         "throw_origin_distance": 0.8,
+                        "spawn_height": 0.7,
                     },
                 ],
             },

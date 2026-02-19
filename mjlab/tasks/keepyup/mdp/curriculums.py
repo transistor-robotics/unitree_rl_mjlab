@@ -91,7 +91,14 @@ def bounce_quality_schedule(
     except ValueError:
         return {}
 
-    for key in ("apex_std", "velocity_std", "vel_weight", "vert_std", "vert_weight", "min_upward_velocity"):
+    for key in (
+        "apex_std",
+        "velocity_std",
+        "vel_weight",
+        "vert_std",
+        "vert_weight",
+        "min_upward_velocity",
+    ):
         if active.get(key) is not None:
             term_cfg.params[key] = float(active[key])
 
@@ -139,7 +146,9 @@ def ball_state_noise_schedule(
 
         # Either derive update probability from fps, or use explicit value.
         if active.get("camera_fps") is not None:
-            estimator._update_prob = min(1.0, float(active["camera_fps"]) * float(estimator._step_dt))
+            estimator._update_prob = min(
+                1.0, float(active["camera_fps"]) * float(estimator._step_dt)
+            )
         if active.get("update_prob") is not None:
             estimator._update_prob = float(active["update_prob"])
 
@@ -162,11 +171,21 @@ def ball_state_noise_schedule(
 
     return {
         "stage_idx": float(active_stage_idx),
-        "camera_fps_equiv": float(active["camera_fps"]) if active.get("camera_fps") is not None else -1.0,
-        "update_prob": float(active["update_prob"]) if active.get("update_prob") is not None else -1.0,
-        "dropout_prob": float(active["dropout_prob"]) if active.get("dropout_prob") is not None else -1.0,
-        "pos_noise_std": float(active["pos_noise_std"]) if active.get("pos_noise_std") is not None else -1.0,
-        "vel_noise_std": float(active["vel_noise_std"]) if active.get("vel_noise_std") is not None else -1.0,
+        "camera_fps_equiv": float(active["camera_fps"])
+        if active.get("camera_fps") is not None
+        else -1.0,
+        "update_prob": float(active["update_prob"])
+        if active.get("update_prob") is not None
+        else -1.0,
+        "dropout_prob": float(active["dropout_prob"])
+        if active.get("dropout_prob") is not None
+        else -1.0,
+        "pos_noise_std": float(active["pos_noise_std"])
+        if active.get("pos_noise_std") is not None
+        else -1.0,
+        "vel_noise_std": float(active["vel_noise_std"])
+        if active.get("vel_noise_std") is not None
+        else -1.0,
     }
 
 
@@ -195,17 +214,32 @@ def ball_spawn_difficulty_schedule(
         return {}
 
     if active.get("lateral_spawn_variance") is not None:
-        term_cfg.params["lateral_spawn_variance"] = float(active["lateral_spawn_variance"])
+        term_cfg.params["lateral_spawn_variance"] = float(
+            active["lateral_spawn_variance"]
+        )
     if active.get("frontal_spawn_variance") is not None:
-        term_cfg.params["frontal_spawn_variance"] = float(active["frontal_spawn_variance"])
+        term_cfg.params["frontal_spawn_variance"] = float(
+            active["frontal_spawn_variance"]
+        )
     if active.get("throw_origin_distance") is not None:
-        term_cfg.params["throw_origin_distance"] = float(active["throw_origin_distance"])
+        term_cfg.params["throw_origin_distance"] = float(
+            active["throw_origin_distance"]
+        )
+    if active.get("spawn_height") is not None:
+        term_cfg.params["spawn_height"] = float(active["spawn_height"])
 
     return {
         "stage_idx": float(active_stage_idx),
-        "lateral_spawn_variance": float(term_cfg.params.get("lateral_spawn_variance", -1.0)),
-        "frontal_spawn_variance": float(term_cfg.params.get("frontal_spawn_variance", -1.0)),
-        "throw_origin_distance": float(term_cfg.params.get("throw_origin_distance", -1.0)),
+        "lateral_spawn_variance": float(
+            term_cfg.params.get("lateral_spawn_variance", -1.0)
+        ),
+        "frontal_spawn_variance": float(
+            term_cfg.params.get("frontal_spawn_variance", -1.0)
+        ),
+        "throw_origin_distance": float(
+            term_cfg.params.get("throw_origin_distance", -1.0)
+        ),
+        "spawn_height": float(term_cfg.params.get("spawn_height", -1.0)),
     }
 
 
@@ -242,13 +276,17 @@ def bounce_reward_shaping_schedule(
         if active.get("discovery_weight") is not None:
             discovery_cfg.weight = float(active["discovery_weight"])
         if active.get("min_upward_velocity") is not None:
-            discovery_cfg.params["min_upward_velocity"] = float(active["min_upward_velocity"])
+            discovery_cfg.params["min_upward_velocity"] = float(
+                active["min_upward_velocity"]
+            )
         if active.get("min_apex_height") is not None:
             discovery_cfg.params["min_apex_height"] = float(active["min_apex_height"])
         if active.get("min_apex_gain") is not None:
             discovery_cfg.params["min_apex_gain"] = float(active["min_apex_gain"])
         if active.get("target_upward_velocity") is not None:
-            discovery_cfg.params["target_upward_velocity"] = float(active["target_upward_velocity"])
+            discovery_cfg.params["target_upward_velocity"] = float(
+                active["target_upward_velocity"]
+            )
 
     lateral_cfg = _maybe_get_reward_cfg(lateral_term_name)
     if lateral_cfg is not None and active.get("lateral_weight") is not None:
@@ -264,10 +302,18 @@ def bounce_reward_shaping_schedule(
 
     return {
         "stage_idx": float(active_stage_idx),
-        "discovery_weight": float(discovery_cfg.weight) if discovery_cfg is not None else -1.0,
-        "lateral_weight": float(lateral_cfg.weight) if lateral_cfg is not None else -1.0,
-        "under_ball_weight": float(under_ball_cfg.weight) if under_ball_cfg is not None else -1.0,
-        "strike_plane_weight": float(strike_plane_cfg.weight) if strike_plane_cfg is not None else -1.0,
+        "discovery_weight": float(discovery_cfg.weight)
+        if discovery_cfg is not None
+        else -1.0,
+        "lateral_weight": float(lateral_cfg.weight)
+        if lateral_cfg is not None
+        else -1.0,
+        "under_ball_weight": float(under_ball_cfg.weight)
+        if under_ball_cfg is not None
+        else -1.0,
+        "strike_plane_weight": float(strike_plane_cfg.weight)
+        if strike_plane_cfg is not None
+        else -1.0,
         "discovery_min_upward_vz": (
             float(discovery_cfg.params.get("min_upward_velocity", -1.0))
             if discovery_cfg is not None
