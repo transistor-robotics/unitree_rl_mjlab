@@ -338,7 +338,7 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
                         "lateral_spawn_variance": 0.2,
                         "frontal_spawn_variance": 0.2,
                         "throw_origin_distance": 0.0,
-                        "spawn_height": 2.0,
+                        "spawn_height": 1.4,
                     },
                     {
                         # Stage 1: light randomness around paddle center.
@@ -346,7 +346,7 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
                         "lateral_spawn_variance": 0.6,
                         "frontal_spawn_variance": 0.4,
                         "throw_origin_distance": 0.15,
-                        "spawn_height": 1.4,
+                        "spawn_height": 1.2,
                     },
                     {
                         # Stage 2: moderate offset variance.
