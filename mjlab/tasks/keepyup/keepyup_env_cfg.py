@@ -231,7 +231,7 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
         ),
         "paddle_height_consistency": RewardTermCfg(
             func=mdp.paddle_height_consistency_reward,
-            weight=0.21,
+            weight=0.47,
             params={"sensor_name": "paddle_ball_contact"},
         ),
         #####################
