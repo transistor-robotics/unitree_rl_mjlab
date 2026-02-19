@@ -219,7 +219,7 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
             params={"sensor_name": "paddle_ball_contact"},
         ),
         "ball_height": RewardTermCfg(
-            func=mdp.ball_height_reward, weight=2.5, params={"target_height": 1.4}
+            func=mdp.ball_height_reward, weight=2.8, params={"target_height": 1.4}
         ),
         "bounce_rhythm": RewardTermCfg(
             func=mdp.bounce_rhythm_reward,
@@ -227,11 +227,11 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
             params={"sensor_name": "paddle_ball_contact"},
         ),
         "ball_paddle_tracking": RewardTermCfg(
-            func=mdp.ball_paddle_tracking_reward, weight=0.3
+            func=mdp.ball_paddle_tracking_reward, weight=0.22
         ),
         "paddle_height_consistency": RewardTermCfg(
             func=mdp.paddle_height_consistency_reward,
-            weight=0.3,
+            weight=0.21,
             params={"sensor_name": "paddle_ball_contact"},
         ),
         #####################
