@@ -215,15 +215,15 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
         ######################
         "total_bounces": RewardTermCfg(
             func=mdp.bounce_reward,
-            weight=1.0,
+            weight=3.0,
             params={"sensor_name": "paddle_ball_contact"},
         ),
         "ball_height": RewardTermCfg(
-            func=mdp.ball_height_reward, weight=1.2, params={"target_height": 1.4}
+            func=mdp.ball_height_reward, weight=1.8, params={"target_height": 1.4}
         ),
         "bounce_rhythm": RewardTermCfg(
             func=mdp.bounce_rhythm_reward,
-            weight=1.0,
+            weight=1.2,
             params={"sensor_name": "paddle_ball_contact"},
         ),
         "ball_paddle_tracking": RewardTermCfg(
