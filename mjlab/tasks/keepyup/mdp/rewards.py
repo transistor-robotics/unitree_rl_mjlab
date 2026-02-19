@@ -261,42 +261,6 @@ class paddle_height_consistency_reward:
         return reward
 
 
-class paddle_face_up_reward:
-    """Reward keeping paddle face roughly upward (parallel to floor)."""
-
-    def __init__(self, cfg: RewardTermCfg, env: ManagerBasedRlEnv):
-        robot: Entity = env.scene["robot"]
-        ids, _names = robot.find_geoms("paddle_geom")
-        if len(ids) == 0:
-            raise RuntimeError("paddle_geom not found on robot entity")
-        self._paddle_geom_idx: int = ids[0]
-
-    def __call__(
-        self,
-        env: ManagerBasedRlEnv,
-        robot_cfg: SceneEntityCfg = _DEFAULT_ROBOT_CFG,
-        min_alignment: float = 0.85,
-    ) -> torch.Tensor:
-        robot: Entity = env.scene[robot_cfg.name]
-
-        # For mjGEOM_CYLINDER, local +Z is the face normal.
-        paddle_quat_w = robot.data.geom_quat_w[:, self._paddle_geom_idx, :]  # [B, 4]
-        local_normal = torch.tensor([0.0, 0.0, 1.0], device=env.device).repeat(
-            env.num_envs, 1
-        )
-        normal_w = quat_apply(paddle_quat_w, local_normal)  # [B, 3]
-
-        # Reward face-up alignment (normal close to +Z), with dead-zone below threshold.
-        alignment = normal_w[:, 2]  # dot(normal_w, world_up)
-        reward = torch.clamp(
-            (alignment - min_alignment) / (1.0 - min_alignment), min=0.0
-        )
-
-        log = env.extras.setdefault("log", {})
-        log["Metrics/paddle_up_alignment_mean"] = alignment.mean()
-        return reward
-
-
 def self_collision_cost(env: ManagerBasedRlEnv, sensor_name: str) -> torch.Tensor:
     """Penalize robot self-collisions detected by a contact sensor."""
     sensor: ContactSensor = env.scene[sensor_name]

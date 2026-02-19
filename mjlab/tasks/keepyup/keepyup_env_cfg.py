@@ -234,9 +234,6 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
             weight=0.3,
             params={"sensor_name": "paddle_ball_contact"},
         ),
-        "paddle_face_up_reward": RewardTermCfg(
-            func=mdp.paddle_face_up_reward, weight=0.12
-        ),
         #####################
         # Non task-specific #
         #####################
@@ -247,7 +244,7 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
         ),
         "paddle_robot_collisions": RewardTermCfg(
             func=mdp.paddle_robot_collision_cost,
-            weight=-0.9,
+            weight=-0.6,
             params={"sensor_name": "paddle_robot_collision"},
         ),
         "action_rate_l2": RewardTermCfg(
