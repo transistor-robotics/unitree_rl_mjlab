@@ -104,5 +104,8 @@ def unitree_g1_keepyup_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
         
         # Disable observation corruption
         cfg.observations["policy"].enable_corruption = False
+
+        # EC: TODO -> Randomise curriculum each episode? 
+        # Or perhaps take 'curriculum step' as a param?
     
     return cfg

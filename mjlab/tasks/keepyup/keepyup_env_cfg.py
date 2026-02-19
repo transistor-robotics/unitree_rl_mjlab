@@ -219,11 +219,11 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
             params={"sensor_name": "paddle_ball_contact"},
         ),
         "ball_height": RewardTermCfg(
-            func=mdp.ball_height_reward, weight=2.8, params={"target_height": 1.4}
+            func=mdp.ball_height_reward, weight=1.8, params={"target_height": 1.4}
         ),
         "bounce_rhythm": RewardTermCfg(
             func=mdp.bounce_rhythm_reward,
-            weight=0.67,
+            weight=0.88,
             params={"sensor_name": "paddle_ball_contact"},
         ),
         "ball_paddle_tracking": RewardTermCfg(
@@ -231,7 +231,7 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
         ),
         "paddle_height_consistency": RewardTermCfg(
             func=mdp.paddle_height_consistency_reward,
-            weight=0.47,
+            weight=1.2,
             params={"sensor_name": "paddle_ball_contact"},
         ),
         #####################
@@ -239,12 +239,12 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
         #####################
         "self_collisions": RewardTermCfg(
             func=mdp.self_collision_cost,
-            weight=-0.45,
+            weight=-0.8,
             params={"sensor_name": "self_collision"},
         ),
         "paddle_robot_collisions": RewardTermCfg(
             func=mdp.paddle_robot_collision_cost,
-            weight=-0.6,
+            weight=-0.9,
             params={"sensor_name": "paddle_robot_collision"},
         ),
         "action_rate_l2": RewardTermCfg(
@@ -286,7 +286,7 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
                     },
                     # Stage 1: mild realism.
                     {
-                        "step": 300 * 24,
+                        "step": 600 * 24,
                         "camera_fps": 35.0,
                         "update_prob": None,
                         "dropout_prob": 0.02,
@@ -298,7 +298,7 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
                     },
                     # Stage 2: medium realism.
                     {
-                        "step": 900 * 24,
+                        "step": 1800 * 24,
                         "camera_fps": 27.5,
                         "update_prob": None,
                         "dropout_prob": 0.05,
@@ -310,7 +310,7 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
                     },
                     # Stage 3: target deployment realism (~20 fps effective).
                     {
-                        "step": 1500 * 24,
+                        "step": 3000 * 24,
                         "camera_fps": 20.0,
                         "update_prob": None,
                         "dropout_prob": 0.08,
@@ -342,26 +342,26 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
                     },
                     {
                         # Stage 1: light randomness around paddle center.
-                        "step": 300 * 24,
+                        "step": 600 * 24,
                         "lateral_spawn_variance": 0.6,
                         "frontal_spawn_variance": 0.4,
-                        "throw_origin_distance": 0.15,
+                        "throw_origin_distance": 0.4,
                         "spawn_height": 1.2,
                     },
                     {
                         # Stage 2: moderate offset variance.
-                        "step": 900 * 24,
+                        "step": 1500 * 24,
                         "lateral_spawn_variance": 1.0,
                         "frontal_spawn_variance": 0.7,
-                        "throw_origin_distance": 0.5,
+                        "throw_origin_distance": 0.8,
                         "spawn_height": 1.0,
                     },
                     {
                         # Stage 3: full configured spawn variance.
-                        "step": 1600 * 24,
+                        "step": 2200 * 24,
                         "lateral_spawn_variance": 1.0,
                         "frontal_spawn_variance": 1.0,
-                        "throw_origin_distance": 0.8,
+                        "throw_origin_distance": 1.2,
                         "spawn_height": 0.7,
                     },
                 ],
