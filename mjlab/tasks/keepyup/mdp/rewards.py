@@ -262,6 +262,13 @@ def self_collision_cost(env: ManagerBasedRlEnv, sensor_name: str) -> torch.Tenso
     return sensor.data.found.squeeze(-1)
 
 
+def paddle_robot_collision_cost(env: ManagerBasedRlEnv, sensor_name: str) -> torch.Tensor:
+    """Penalize collisions between the paddle geometry and robot body."""
+    sensor: ContactSensor = env.scene[sensor_name]
+    assert sensor.data.found is not None
+    return sensor.data.found.squeeze(-1)
+
+
 # class bounce_event_reward:
 #     """Reward for successful bounce events.
 

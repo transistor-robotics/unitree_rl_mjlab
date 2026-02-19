@@ -60,8 +60,25 @@ def unitree_g1_keepyup_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
         reduce="none",
         num_slots=1,
     )
+    paddle_robot_collision = ContactSensorCfg(
+        name="paddle_robot_collision",
+        primary=ContactMatch(
+            mode="geom",
+            pattern="paddle_geom",
+            entity="robot",
+        ),
+        secondary=ContactMatch(
+            mode="subtree",
+            pattern="pelvis",
+            entity="robot",
+            exclude=("paddle_geom",),
+        ),
+        fields=("found",),
+        reduce="none",
+        num_slots=1,
+    )
     
-    cfg.scene.sensors = (paddle_ball_contact, self_collision)
+    cfg.scene.sensors = (paddle_ball_contact, self_collision, paddle_robot_collision)
     
     # Set action scale for left arm joints using G1's actuator-specific scales
     joint_pos_action = cfg.actions["joint_pos"]

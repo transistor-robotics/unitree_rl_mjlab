@@ -243,7 +243,11 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
             weight=-0.45,
             params={"sensor_name": "self_collision"},
         ),
-        # EC: TODO -> Punish collisions between the paddle and the robot body
+        "paddle_robot_collisions": RewardTermCfg(
+            func=mdp.paddle_robot_collision_cost,
+            weight=-0.9,
+            params={"sensor_name": "paddle_robot_collision"},
+        ),
         "action_rate_l2": RewardTermCfg(
             func=mdp.action_rate_l2,
             weight=-0.01,
