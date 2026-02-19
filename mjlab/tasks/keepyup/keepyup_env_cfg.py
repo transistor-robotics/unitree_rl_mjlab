@@ -215,24 +215,27 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
         ######################
         "total_bounces": RewardTermCfg(
             func=mdp.bounce_reward,
-            weight=3.0,
+            weight=5.0,
             params={"sensor_name": "paddle_ball_contact"},
         ),
         "ball_height": RewardTermCfg(
-            func=mdp.ball_height_reward, weight=1.8, params={"target_height": 1.4}
+            func=mdp.ball_height_reward, weight=1.8, params={"target_height": 2.5}
         ),
         "bounce_rhythm": RewardTermCfg(
             func=mdp.bounce_rhythm_reward,
-            weight=1.2,
+            weight=0.67,
             params={"sensor_name": "paddle_ball_contact"},
         ),
         "ball_paddle_tracking": RewardTermCfg(
-            func=mdp.ball_paddle_tracking_reward, weight=0.7
+            func=mdp.ball_paddle_tracking_reward, weight=0.3
         ),
         "paddle_height_consistency": RewardTermCfg(
             func=mdp.paddle_height_consistency_reward,
-            weight=0.7,
+            weight=0.3,
             params={"sensor_name": "paddle_ball_contact"},
+        ),
+        "paddle_face_up_reward": RewardTermCfg(
+            func=mdp.paddle_face_up_reward, weight=0.12
         ),
         #####################
         # Non task-specific #
@@ -386,15 +389,6 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
                 "asset_cfg": SceneEntityCfg("ball"),
             },
         ),
-        # "ball_out_of_frame": TerminationTermCfg(
-        #     func=mdp.ball_out_of_frame,
-        #     params={
-        #         "grace_steps": 90,
-        #         "max_distance": 1.2,
-        #         "robot_cfg": SceneEntityCfg("robot"),
-        #         "ball_cfg": SceneEntityCfg("ball"),
-        #     },
-        # ),
         "fell_over": TerminationTermCfg(
             func=mdp.bad_orientation,
             params={"limit_angle": math.radians(50.0)},
