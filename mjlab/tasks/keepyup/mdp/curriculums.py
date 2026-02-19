@@ -28,11 +28,9 @@ class BallSpawnStage(TypedDict, total=False):
     """Stage definition for reset-ball spawn difficulty."""
 
     step: int
-    spawn_height: float
-    hit_probability: float
-    hit_radius_fraction: float
-    miss_radius_range: tuple[float, float]
-    entry_angle_deg_range: tuple[float, float]
+    lateral_spawn_variance: float
+    frontal_spawn_variance: float
+    throw_origin_distance: float
 
 
 class BounceQualityStage(TypedDict, total=False):
@@ -178,13 +176,7 @@ def ball_spawn_difficulty_schedule(
     stages: list[BallSpawnStage],
     event_term_name: str = "reset_ball",
 ) -> dict[str, float]:
-    """Curriculum for targeted ball reset difficulty.
-
-    This progressively increases spawn diversity by adjusting:
-    - hit probability (how often spawn targets paddle center region),
-    - impact entry angle range from vertical,
-    - miss radius and spawn volume ranges.
-    """
+    """Curriculum for keepyup ball reset spawn variance."""
 
     del env_ids  # Unused. Curriculum is global.
 
@@ -202,25 +194,18 @@ def ball_spawn_difficulty_schedule(
     except ValueError:
         return {}
 
-    if active.get("spawn_height") is not None:
-        term_cfg.params["spawn_height"] = float(active["spawn_height"])
-    if active.get("hit_probability") is not None:
-        term_cfg.params["hit_probability"] = float(active["hit_probability"])
-    if active.get("hit_radius_fraction") is not None:
-        term_cfg.params["hit_radius_fraction"] = float(active["hit_radius_fraction"])
-    if active.get("miss_radius_range") is not None:
-        term_cfg.params["miss_radius_range"] = tuple(active["miss_radius_range"])
-    if active.get("entry_angle_deg_range") is not None:
-        term_cfg.params["entry_angle_deg_range"] = tuple(active["entry_angle_deg_range"])
-
-    entry_rng = term_cfg.params.get("entry_angle_deg_range", (0.0, 0.0))
+    if active.get("lateral_spawn_variance") is not None:
+        term_cfg.params["lateral_spawn_variance"] = float(active["lateral_spawn_variance"])
+    if active.get("frontal_spawn_variance") is not None:
+        term_cfg.params["frontal_spawn_variance"] = float(active["frontal_spawn_variance"])
+    if active.get("throw_origin_distance") is not None:
+        term_cfg.params["throw_origin_distance"] = float(active["throw_origin_distance"])
 
     return {
         "stage_idx": float(active_stage_idx),
-        "spawn_height": float(term_cfg.params.get("spawn_height", -1.0)),
-        "hit_probability": float(term_cfg.params.get("hit_probability", -1.0)),
-        "entry_angle_min_deg": float(entry_rng[0]),
-        "entry_angle_max_deg": float(entry_rng[1]),
+        "lateral_spawn_variance": float(term_cfg.params.get("lateral_spawn_variance", -1.0)),
+        "frontal_spawn_variance": float(term_cfg.params.get("frontal_spawn_variance", -1.0)),
+        "throw_origin_distance": float(term_cfg.params.get("throw_origin_distance", -1.0)),
     }
 
 

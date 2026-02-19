@@ -21,24 +21,14 @@ from mjlab.viewer import ViewerConfig
 
 def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
     """Create base keepy up task configuration.
-    
+
     This factory function creates the base configuration that is then
     customized per robot in robot-specific config files.
     """
-    
+
     ##
     # Observations
     ##
-    
-    left_arm_joint_names = (
-        "left_shoulder_pitch_joint",
-        "left_shoulder_roll_joint",
-        "left_shoulder_yaw_joint",
-        "left_elbow_joint",
-        "left_wrist_roll_joint",
-        "left_wrist_pitch_joint",
-        "left_wrist_yaw_joint",
-    )
     locked_joint_names = (
         "left_hip_pitch_joint",
         "left_hip_roll_joint",
@@ -66,9 +56,17 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
 
     left_arm_cfg = SceneEntityCfg(
         "robot",
-        joint_names=left_arm_joint_names,
+        joint_names=(
+            "left_shoulder_pitch_joint",
+            "left_shoulder_roll_joint",
+            "left_shoulder_yaw_joint",
+            "left_elbow_joint",
+            "left_wrist_roll_joint",
+            "left_wrist_pitch_joint",
+            "left_wrist_yaw_joint",
+        ),
     )
-    
+
     policy_terms = {
         "left_arm_joint_pos": ObservationTermCfg(
             func=mdp.joint_pos_rel,
@@ -104,7 +102,7 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
         ),
         "actions": ObservationTermCfg(func=mdp.last_action),
     }
-    
+
     # Critic gets privileged ball kinematics that are unavailable in deployment.
     critic_terms = {
         **policy_terms,
@@ -118,7 +116,7 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
             func=mdp.ball_ang_vel_in_base_frame,
         ),
     }
-    
+
     observations = {
         "policy": ObservationGroupCfg(
             terms=policy_terms,
@@ -133,11 +131,11 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
             history_length=1,
         ),
     }
-    
+
     ##
     # Actions
     ##
-    
+
     # Only control the 7 left arm joints
     actions: dict[str, ActionTermCfg] = {
         "joint_pos": JointPositionActionCfg(
@@ -155,64 +153,28 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
             use_default_offset=True,
         )
     }
-    
+
     ##
     # Events
     ##
-    
+
     events = {
-        "reset_robot_joints": EventTermCfg(
-            func=mdp.reset_joints_by_offset,
+        "reset_arm_then_ball": EventTermCfg(
+            func=mdp.reset_arm_then_ball,
             mode="reset",
             params={
+                "left_arm_cfg": left_arm_cfg,
                 "position_range": (0.0, 0.0),
                 "velocity_range": (0.0, 0.0),
-                "asset_cfg": SceneEntityCfg(
-                    "robot",
-                    joint_names=left_arm_joint_names,
-                ),
-            },
-        ),
-        "reset_left_elbow_variation": EventTermCfg(
-            func=mdp.reset_joints_by_offset,
-            mode="reset",
-            params={
-                # Randomize elbow start around its nominal target.
-                "position_range": (-0.09, 0.09),
-                "velocity_range": (0.0, 0.0),
-                "asset_cfg": SceneEntityCfg(
-                    "robot",
-                    joint_names=("left_elbow_joint",),
-                ),
-            },
-        ),
-        "reset_left_wrist_variation": EventTermCfg(
-            func=mdp.reset_joints_by_offset,
-            mode="reset",
-            params={
-                # Randomize wrist orientation by +/- 6 degrees on roll/pitch/yaw.
-                "position_range": (-math.radians(6.0), math.radians(6.0)),
-                "velocity_range": (0.0, 0.0),
-                "asset_cfg": SceneEntityCfg(
-                    "robot",
-                    joint_names=(
-                        "left_wrist_roll_joint",
-                        "left_wrist_pitch_joint",
-                        "left_wrist_yaw_joint",
-                    ),
-                ),
-            },
-        ),
-        "reset_non_left_arm_joints": EventTermCfg(
-            func=mdp.reset_joints_by_offset,
-            mode="reset",
-            params={
-                "position_range": (0.0, 0.0),
-                "velocity_range": (0.0, 0.0),
-                "asset_cfg": SceneEntityCfg(
-                    "robot",
-                    joint_names=locked_joint_names,
-                ),
+                "asset_cfg": SceneEntityCfg("ball"),
+                "robot_cfg": SceneEntityCfg("robot"),
+                "spawn_height": 0.70,
+                # Stage 0 curriculum keeps both variances at 0 (center drop).
+                # Variances are in paddle local frame (frontal/lateral),
+                # while spawn_height is world +Z (vertical).
+                "lateral_spawn_variance": 0.0,
+                "frontal_spawn_variance": 0.0,
+                "throw_origin_distance": 0.0,
             },
         ),
         "lock_non_left_arm_joints": EventTermCfg(
@@ -226,23 +188,6 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
                     "robot",
                     joint_names=locked_joint_names,
                 ),
-            },
-        ),
-        "reset_ball": EventTermCfg(
-            func=mdp.reset_ball_targeted_to_paddle,
-            mode="reset",
-            params={
-                "asset_cfg": SceneEntityCfg("ball"),
-                "robot_cfg": SceneEntityCfg("robot"),
-                # Ball spawns spawn_height above the paddle and falls downward under
-                # gravity. entry_angle_deg_range controls horizontal approach angle;
-                # 0 = perfectly straight down. Curriculum stage 0 overrides these.
-                "spawn_height": 0.70,
-                "paddle_radius": 0.075,
-                "hit_probability": 0.80,
-                "hit_radius_fraction": 0.70,
-                "miss_radius_range": (0.085, 0.13),
-                "entry_angle_deg_range": (0.0, 25.0),
             },
         ),
         "randomize_ball_bounciness": EventTermCfg(
@@ -262,56 +207,43 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
             },
         ),
     }
-    
+
     ##
     # Rewards
     ##
-    
+
     rewards = {
-        "bounce_quality": RewardTermCfg(
-            func=mdp.bounce_quality_reward,
-            weight=12.0,
-            params={
-                "sensor_name": "paddle_ball_contact",
-                "ball_cfg": SceneEntityCfg("ball"),
-                "target_apex_height": 1.42,
-                "target_upward_velocity": 1.75,
-                "min_reward_interval_steps": 5,
-                # Curriculum stage 0 overrides all values below at first reset.
-                # Defaults here match stage 0 (most forgiving).
-                "apex_std": 0.50,
-                "velocity_std": 0.60,
-                "vel_weight": 0.0,
-                "vert_std": 2.0,
-                "vert_weight": 0.0,
-                "min_upward_velocity": 0.05,
-            },
+        ######################
+        # Task-space rewards #
+        ######################
+        "total_bounces": RewardTermCfg(
+            func=mdp.bounce_reward,
+            weight=1.0,
+            params={"sensor_name": "paddle_ball_contact"},
         ),
-        # Scaffolding helpers — disabled while focusing on core bounce signal.
-        "under_ball_alignment": None,
-        "strike_plane_hold": None,
-        "upward_chase": RewardTermCfg(
-            func=mdp.upward_chase_penalty,
-            weight=-1.2,
-            params={
-                "ball_ascending_threshold": 0.10,
-                "robot_cfg": SceneEntityCfg("robot"),
-                "ball_cfg": SceneEntityCfg("ball"),
-            },
+        "ball_height": RewardTermCfg(func=mdp.ball_height_reward, weight=1.2),
+        "bounce_rhythm": RewardTermCfg(
+            func=mdp.bounce_rhythm_reward,
+            weight=1.0,
+            params={"sensor_name": "paddle_ball_contact"},
         ),
-        "sustained_contact": RewardTermCfg(
-            func=mdp.sustained_contact_penalty,
-            weight=-3.5,
-            params={
-                "sensor_name": "paddle_ball_contact",
-                "threshold": 1,
-            },
+        "ball_paddle_tracking": RewardTermCfg(
+            func=mdp.ball_paddle_tracking_reward, weight=0.7
         ),
+        "paddle_height_consistency": RewardTermCfg(
+            func=mdp.paddle_height_consistency_reward,
+            weight=0.7,
+            params={"sensor_name": "paddle_ball_contact"},
+        ),
+        #####################
+        # Non task-specific #
+        #####################
         "self_collisions": RewardTermCfg(
             func=mdp.self_collision_cost,
             weight=-0.45,
             params={"sensor_name": "self_collision"},
         ),
+        # EC: TODO -> Punish collisions between the paddle and the robot body
         "action_rate_l2": RewardTermCfg(
             func=mdp.action_rate_l2,
             weight=-0.01,
@@ -325,63 +257,12 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
             weight=-5.0,
         ),
     }
-    
+
     ##
     # Curriculum
     ##
 
     curriculum = {
-        "bounce_quality": CurriculumTermCfg(
-            func=mdp.bounce_quality_schedule,
-            params={
-                "stages": [
-                    {
-                        # Stage 0: apex is the only thing that matters.
-                        # Any upward rebound that reaches somewhere near the target
-                        # height scores well. Velocity and direction are ignored.
-                        "step": 0,
-                        "apex_std": 0.50,
-                        "velocity_std": 0.60,
-                        "vel_weight": 0.0,
-                        "vert_std": 2.0,
-                        "vert_weight": 0.0,
-                        "min_upward_velocity": 0.05,
-                    },
-                    {
-                        # Stage 1: begin caring a little about upward speed.
-                        # Direction still irrelevant — sideways bounces still earn.
-                        "step": 300 * 24,
-                        "apex_std": 0.35,
-                        "velocity_std": 0.60,
-                        "vel_weight": 0.30,
-                        "vert_std": 2.0,
-                        "vert_weight": 0.0,
-                        "min_upward_velocity": 0.12,
-                    },
-                    {
-                        # Stage 2: velocity fully matters; start penalising sideways
-                        # deflections gently.
-                        "step": 900 * 24,
-                        "apex_std": 0.25,
-                        "velocity_std": 0.60,
-                        "vel_weight": 0.65,
-                        "vert_std": 1.2,
-                        "vert_weight": 0.25,
-                        "min_upward_velocity": 0.22,
-                    },
-                    {
-                        # Stage 3: full strictness — fast, straight, on-target arc.
-                        "step": 1500 * 24,
-                        "apex_std": 0.18,
-                        "velocity_std": 0.60,
-                        "vel_weight": 1.0,
-                        "vert_std": 0.70,
-                        "vert_weight": 0.60,
-                        "min_upward_velocity": 0.35,
-                    },
-                ],
-            },
-        ),
         "ball_state_noise": CurriculumTermCfg(
             func=mdp.ball_state_noise_schedule,
             params={
@@ -444,45 +325,36 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
         "ball_spawn_difficulty": CurriculumTermCfg(
             func=mdp.ball_spawn_difficulty_schedule,
             params={
-                "event_term_name": "reset_ball",
-                # Ball spawns spawn_height above paddle, falling straight down.
-                # entry_angle_deg_range grows over curriculum to add horizontal throw.
+                "event_term_name": "reset_arm_then_ball",
+                # Variances are normalized [0, 1] fractions of max spawn ranges.
                 "stages": [
                     {
-                        # Stage 0: dead-straight drop, always on paddle center.
+                        # Stage 0: no lateral/frontal offset.
                         "step": 0,
-                        "spawn_height": 0.70,
-                        "hit_probability": 1.0,
-                        "hit_radius_fraction": 0.20,
-                        "miss_radius_range": (0.09, 0.10),
-                        "entry_angle_deg_range": (0.0, 2.0),
+                        "lateral_spawn_variance": 0.0,
+                        "frontal_spawn_variance": 0.0,
+                        "throw_origin_distance": 0.0,
                     },
                     {
-                        # Stage 1: slight angle variance introduced.
+                        # Stage 1: light randomness around paddle center.
                         "step": 300 * 24,
-                        "spawn_height": 0.70,
-                        "hit_probability": 0.95,
-                        "hit_radius_fraction": 0.35,
-                        "miss_radius_range": (0.09, 0.11),
-                        "entry_angle_deg_range": (0.0, 8.0),
+                        "lateral_spawn_variance": 0.2,
+                        "frontal_spawn_variance": 0.4,
+                        "throw_origin_distance": 0.2,
                     },
                     {
-                        # Stage 2: moderate angle variance.
+                        # Stage 2: moderate offset variance.
                         "step": 900 * 24,
-                        "spawn_height": 0.70,
-                        "hit_probability": 0.88,
-                        "hit_radius_fraction": 0.50,
-                        "miss_radius_range": (0.085, 0.12),
-                        "entry_angle_deg_range": (0.0, 16.0),
+                        "lateral_spawn_variance": 0.5,
+                        "frontal_spawn_variance": 0.7,
+                        "throw_origin_distance": 0.5,
                     },
                     {
-                        # Stage 3: full difficulty matching deployment variety.
+                        # Stage 3: full configured spawn variance.
                         "step": 1500 * 24,
-                        "spawn_height": 0.70,
-                        "hit_probability": 0.80,
-                        "hit_radius_fraction": 0.70,
-                        "miss_radius_range": (0.085, 0.13),
-                        "entry_angle_deg_range": (0.0, 25.0),
+                        "lateral_spawn_variance": 1.0,
+                        "frontal_spawn_variance": 1.0,
+                        "throw_origin_distance": 0.8,
                     },
                 ],
             },
@@ -492,7 +364,7 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
     ##
     # Terminations
     ##
-    
+
     terminations = {
         "time_out": TerminationTermCfg(
             func=mdp.time_out,
@@ -506,25 +378,25 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
                 "asset_cfg": SceneEntityCfg("ball"),
             },
         ),
-        "ball_out_of_frame": TerminationTermCfg(
-            func=mdp.ball_out_of_frame,
-            params={
-                "grace_steps": 90,
-                "max_distance": 1.2,
-                "robot_cfg": SceneEntityCfg("robot"),
-                "ball_cfg": SceneEntityCfg("ball"),
-            },
-        ),
+        # "ball_out_of_frame": TerminationTermCfg(
+        #     func=mdp.ball_out_of_frame,
+        #     params={
+        #         "grace_steps": 90,
+        #         "max_distance": 1.2,
+        #         "robot_cfg": SceneEntityCfg("robot"),
+        #         "ball_cfg": SceneEntityCfg("ball"),
+        #     },
+        # ),
         "fell_over": TerminationTermCfg(
             func=mdp.bad_orientation,
             params={"limit_angle": math.radians(50.0)},
         ),
     }
-    
+
     ##
     # Scene and simulation
     ##
-    
+
     return ManagerBasedRlEnvCfg(
         scene=SceneCfg(
             terrain=TerrainImporterCfg(
@@ -543,9 +415,9 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
             origin_type=ViewerConfig.OriginType.ASSET_BODY,
             entity_name="robot",
             body_name="torso_link",
-            distance=2.0,
-            elevation=-10.0,
-            azimuth=45.0,
+            distance=3.5,
+            elevation=-20.0,
+            azimuth=180.0,
         ),
         sim=SimulationCfg(
             nconmax=50,
