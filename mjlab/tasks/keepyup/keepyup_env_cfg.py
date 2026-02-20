@@ -215,11 +215,11 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
         ######################
         "total_bounces": RewardTermCfg(
             func=mdp.bounce_reward,
-            weight=5.0,
+            weight=1.8,
             params={"sensor_name": "paddle_ball_contact"},
         ),
         "ball_height": RewardTermCfg(
-            func=mdp.ball_height_reward, weight=1.8, params={"target_height": 2.1}
+            func=mdp.ball_height_reward, weight=5.0, params={"target_height": 1.4}
         ),
         "bounce_rhythm": RewardTermCfg(
             func=mdp.bounce_rhythm_reward,
@@ -335,24 +335,21 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
                 # Variances are normalized [0, 1] fractions of max spawn ranges.
                 "stages": [
                     {
-                        # Stage 0: no lateral/frontal offset.
                         # Spawn height quite high to give plenty of time to react
                         "step": 0,
-                        "lateral_spawn_variance": 0.2,
+                        "lateral_spawn_variance": 0.5,
                         "frontal_spawn_variance": 0.2,
                         "throw_origin_distance": 0.0,
                         "spawn_height": 1.4,
                     },
                     {
-                        # Stage 1: light randomness around paddle center.
                         "step": 600 * 24,
-                        "lateral_spawn_variance": 0.6,
+                        "lateral_spawn_variance": 0.85,
                         "frontal_spawn_variance": 0.4,
-                        "throw_origin_distance": 0.4,
+                        "throw_origin_distance": 0.3,
                         "spawn_height": 1.2,
                     },
                     {
-                        # Stage 2: moderate offset variance.
                         "step": 1500 * 24,
                         "lateral_spawn_variance": 1.0,
                         "frontal_spawn_variance": 0.7,
@@ -360,7 +357,6 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
                         "spawn_height": 1.0,
                     },
                     {
-                        # Stage 3: full configured spawn variance.
                         "step": 2200 * 24,
                         "lateral_spawn_variance": 1.0,
                         "frontal_spawn_variance": 1.0,
