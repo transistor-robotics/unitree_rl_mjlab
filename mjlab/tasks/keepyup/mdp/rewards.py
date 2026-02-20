@@ -6,8 +6,6 @@ from typing import TYPE_CHECKING
 
 import torch
 
-from mjlab.utils.lab_api.math import quat_apply
-
 from mjlab.entity import Entity
 from mjlab.managers.reward_manager import RewardTermCfg
 from mjlab.managers.scene_entity_config import SceneEntityCfg
@@ -179,6 +177,67 @@ def ball_paddle_tracking_reward(
     log["Metrics/ball_paddle_horizontal_dist_mean"] = horizontal_dist.mean()
     return reward
 
+class ball_trajectory_consistency_reward:
+    """
+    Reward keeping a consistent straight up/down trajectory.
+
+    The reward combines:
+      1) Verticality: low horizontal velocity relative to total speed.
+      2) Line consistency: ball stays close to a smoothed XY trajectory centerline.
+    """
+
+    def __init__(self, cfg: RewardTermCfg, env: ManagerBasedRlEnv):
+        self.ball_name = cfg.params.get("ball_cfg", _DEFAULT_BALL_CFG).name
+        self.ema_xy = torch.zeros((env.num_envs, 2), dtype=torch.float32, device=env.device)
+        self.initialized = torch.zeros(env.num_envs, dtype=torch.bool, device=env.device)
+
+    def reset(self, env_ids: torch.Tensor | slice | None = None) -> None:
+        if env_ids is None:
+            self.ema_xy[:] = 0.0
+            self.initialized[:] = False
+        else:
+            self.ema_xy[env_ids] = 0.0
+            self.initialized[env_ids] = False
+
+    def __call__(
+        self,
+        env: ManagerBasedRlEnv,
+        ball_cfg: SceneEntityCfg = _DEFAULT_BALL_CFG,
+        vel_xy_std: float = 0.55,
+        pos_xy_std: float = 0.09,
+        ema_alpha: float = 0.06,
+        min_speed: float = 0.15,
+        verticality_weight: float = 0.6,
+    ) -> torch.Tensor:
+        ball: Entity = env.scene[self.ball_name if self.ball_name else ball_cfg.name]
+        ball_pos_xy = ball.data.root_link_pos_w[:, :2]
+        ball_vel = ball.data.root_link_lin_vel_w
+        speed = torch.norm(ball_vel, dim=-1)
+        vel_xy = torch.norm(ball_vel[:, :2], dim=-1)
+
+        # Initialize EMA at first call after reset so initial error is zero.
+        not_init = ~self.initialized
+        if not_init.any():
+            self.ema_xy[not_init] = ball_pos_xy[not_init]
+            self.initialized[not_init] = True
+
+        pos_xy_error = torch.norm(ball_pos_xy - self.ema_xy, dim=-1)
+        line_consistency = torch.exp(-torch.square(pos_xy_error) / (pos_xy_std**2))
+        verticality = torch.exp(-torch.square(vel_xy) / (vel_xy_std**2))
+
+        # Avoid rewarding near-static apex phases where direction is undefined.
+        active = (speed >= min_speed).float()
+        reward = (
+            verticality_weight * verticality + (1.0 - verticality_weight) * line_consistency
+        ) * active
+
+        self.ema_xy = (1.0 - ema_alpha) * self.ema_xy + ema_alpha * ball_pos_xy
+
+        log = env.extras.setdefault("log", {})
+        log["Metrics/ball_traj_xy_error_mean"] = pos_xy_error.mean()
+        log["Metrics/ball_traj_xy_speed_mean"] = vel_xy.mean()
+        log["Metrics/ball_traj_active_ratio"] = active.mean()
+        return reward
 
 class paddle_height_consistency_reward:
     """Reward maintaining a consistent paddle Z (height) value over time
