@@ -240,10 +240,7 @@ class ball_trajectory_consistency_reward:
         return reward
 
 class paddle_height_consistency_reward:
-    """Reward maintaining a consistent paddle Z (height) value over time
-    Need to allow for small, sharp impulses when ball is being hit
-    Apply smoothing?
-    """
+    """Reward for keeping paddle height near a fixed target."""
 
     def __init__(self, cfg: RewardTermCfg, env: ManagerBasedRlEnv):
         robot: Entity = env.scene["robot"]
@@ -252,10 +249,6 @@ class paddle_height_consistency_reward:
             raise RuntimeError("paddle_face site not found on robot entity")
         self._paddle_site_idx: int = ids[0]
         self.sensor_name = cfg.params.get("sensor_name", "paddle_ball_contact")
-        self.ema_height = torch.zeros(env.num_envs, device=env.device)
-        self.initialized = torch.zeros(
-            env.num_envs, dtype=torch.bool, device=env.device
-        )
         self.impulse_cooldown = torch.zeros(
             env.num_envs, dtype=torch.int32, device=env.device
         )
@@ -265,58 +258,47 @@ class paddle_height_consistency_reward:
 
     def reset(self, env_ids: torch.Tensor | slice | None = None) -> None:
         if env_ids is None:
-            self.ema_height[:] = 0.0
-            self.initialized[:] = False
             self.impulse_cooldown[:] = 0
             self.prev_contact[:] = False
         else:
-            self.ema_height[env_ids] = 0.0
-            self.initialized[env_ids] = False
             self.impulse_cooldown[env_ids] = 0
             self.prev_contact[env_ids] = False
 
     def __call__(
         self,
         env: ManagerBasedRlEnv,
-        sensor_name: str = "paddle_ball_contact",
-        ema_alpha: float = 0.04,
-        base_std: float = 0.035,
-        impulse_std: float = 0.12,
+        target_height: float = 0.8,
+        base_std: float = 0.08,
+        impulse_std: float = 0.16,
         impulse_window_steps: int = 3,
+        sensor_name: str | None = None,
         robot_cfg: SceneEntityCfg = _DEFAULT_ROBOT_CFG,
     ) -> torch.Tensor:
         robot: Entity = env.scene[robot_cfg.name]
         paddle_z = robot.data.site_pos_w[:, self._paddle_site_idx, 2]
 
-        contact_sensor: ContactSensor = env.scene[sensor_name]
+        contact_sensor: ContactSensor = env.scene[sensor_name or self.sensor_name]
         assert contact_sensor.data.found is not None
         current_contact = contact_sensor.data.found.squeeze(-1) > 0
         new_impulse = self.prev_contact & ~current_contact
 
-        not_init = ~self.initialized
-        if not_init.any():
-            self.ema_height[not_init] = paddle_z[not_init]
-            self.initialized[not_init] = True
-
-        self.ema_height = (1.0 - ema_alpha) * self.ema_height + ema_alpha * paddle_z
         self.impulse_cooldown = torch.where(
             new_impulse,
             torch.full_like(self.impulse_cooldown, impulse_window_steps),
             torch.clamp(self.impulse_cooldown - 1, min=0),
         )
-
         effective_std = torch.where(
             self.impulse_cooldown > 0,
             torch.full_like(paddle_z, impulse_std),
             torch.full_like(paddle_z, base_std),
         )
-        error_sq = torch.square(paddle_z - self.ema_height)
-        reward = torch.exp(-error_sq / torch.square(effective_std))
 
+        height_error_sq = torch.square(paddle_z - target_height)
+        reward = torch.exp(-height_error_sq / torch.square(effective_std))
         self.prev_contact = current_contact
 
         log = env.extras.setdefault("log", {})
-        log["Metrics/paddle_height_ema_mean"] = self.ema_height.mean()
+        log["Metrics/paddle_height_mean"] = paddle_z.mean()
         return reward
 
 

@@ -235,7 +235,7 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
         "paddle_height_consistency": RewardTermCfg(
             func=mdp.paddle_height_consistency_reward,
             weight=0.88,
-            params={"sensor_name": "paddle_ball_contact"},
+            params={"target_height": 0.8},
         ),
         "ball_trajectory_consistency": RewardTermCfg(
             func=mdp.ball_trajectory_consistency_reward, weight=1.3
@@ -341,26 +341,34 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
                         # Spawn height quite high to give plenty of time to react
                         "step": 0,
                         "lateral_spawn_variance": 0.5,
-                        "frontal_spawn_variance": 0.3,
+                        "frontal_spawn_variance": 0.4,
                         "throw_origin_distance": 0.0,
                         "spawn_height": 1.4,
                     },
                     {
                         "step": 800 * 24,
-                        "lateral_spawn_variance": 0.85,
+                        "lateral_spawn_variance": 0.65,
                         "frontal_spawn_variance": 0.5,
                         "throw_origin_distance": 0.3,
                         "spawn_height": 1.2,
                     },
                     {
                         "step": 1600 * 24,
-                        "lateral_spawn_variance": 1.0,
-                        "frontal_spawn_variance": 0.8,
-                        "throw_origin_distance": 0.8,
+                        "lateral_spawn_variance": 0.9,
+                        "frontal_spawn_variance": 0.7,
+                        "throw_origin_distance": 0.5,
                         "spawn_height": 1.0,
                     },
                     {
                         "step": 2400 * 24,
+                        "lateral_spawn_variance": 1.0,
+                        "frontal_spawn_variance": 0.9,
+                        "throw_origin_distance": 0.8,
+                        "spawn_height": 1.0,
+ 
+                    },
+                    {
+                        "step": 2800 * 24,
                         "lateral_spawn_variance": 1.0,
                         "frontal_spawn_variance": 1.0,
                         "throw_origin_distance": 1.2,
