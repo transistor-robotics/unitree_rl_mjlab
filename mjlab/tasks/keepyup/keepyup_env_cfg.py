@@ -230,15 +230,15 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
             params={"sensor_name": "paddle_ball_contact"},
         ),
         "ball_paddle_tracking": RewardTermCfg(
-            func=mdp.ball_paddle_tracking_reward, weight=0.12
+            func=mdp.ball_paddle_tracking_reward, weight=0.09
         ),
         "paddle_height_consistency": RewardTermCfg(
             func=mdp.paddle_height_consistency_reward,
-            weight=1.08,
+            weight=0.78,
             params={"sensor_name": "paddle_ball_contact"},
         ),
         "ball_trajectory_consistency": RewardTermCfg(
-            func=mdp.ball_trajectory_consistency_reward, weight=0.48
+            func=mdp.ball_trajectory_consistency_reward, weight=0.98
         ),
         #####################
         # Non task-specific #
@@ -341,21 +341,21 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
                         # Spawn height quite high to give plenty of time to react
                         "step": 0,
                         "lateral_spawn_variance": 0.5,
-                        "frontal_spawn_variance": 0.2,
+                        "frontal_spawn_variance": 0.3,
                         "throw_origin_distance": 0.0,
                         "spawn_height": 1.4,
                     },
                     {
                         "step": 600 * 24,
                         "lateral_spawn_variance": 0.85,
-                        "frontal_spawn_variance": 0.4,
+                        "frontal_spawn_variance": 0.5,
                         "throw_origin_distance": 0.3,
                         "spawn_height": 1.2,
                     },
                     {
                         "step": 1500 * 24,
                         "lateral_spawn_variance": 1.0,
-                        "frontal_spawn_variance": 0.7,
+                        "frontal_spawn_variance": 0.8,
                         "throw_origin_distance": 0.8,
                         "spawn_height": 1.0,
                     },
