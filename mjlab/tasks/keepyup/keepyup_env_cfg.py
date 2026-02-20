@@ -226,7 +226,7 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
         ),
         "bounce_rhythm": RewardTermCfg(
             func=mdp.bounce_rhythm_reward,
-            weight=0.95,
+            weight=0.48,
             params={"sensor_name": "paddle_ball_contact"},
         ),
         "ball_paddle_tracking": RewardTermCfg(
@@ -234,11 +234,11 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
         ),
         "paddle_height_consistency": RewardTermCfg(
             func=mdp.paddle_height_consistency_reward,
-            weight=0.78,
+            weight=0.88,
             params={"sensor_name": "paddle_ball_contact"},
         ),
         "ball_trajectory_consistency": RewardTermCfg(
-            func=mdp.ball_trajectory_consistency_reward, weight=0.98
+            func=mdp.ball_trajectory_consistency_reward, weight=1.3
         ),
         #####################
         # Non task-specific #
@@ -346,21 +346,21 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
                         "spawn_height": 1.4,
                     },
                     {
-                        "step": 600 * 24,
+                        "step": 1200 * 24,
                         "lateral_spawn_variance": 0.85,
                         "frontal_spawn_variance": 0.5,
                         "throw_origin_distance": 0.3,
                         "spawn_height": 1.2,
                     },
                     {
-                        "step": 1500 * 24,
+                        "step": 2400 * 24,
                         "lateral_spawn_variance": 1.0,
                         "frontal_spawn_variance": 0.8,
                         "throw_origin_distance": 0.8,
                         "spawn_height": 1.0,
                     },
                     {
-                        "step": 2200 * 24,
+                        "step": 3600 * 24,
                         "lateral_spawn_variance": 1.0,
                         "frontal_spawn_variance": 1.0,
                         "throw_origin_distance": 1.2,
