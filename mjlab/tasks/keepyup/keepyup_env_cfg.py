@@ -170,10 +170,10 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
                 "velocity_range": (0.0, 0.0),
                 "asset_cfg": SceneEntityCfg("ball"),
                 "robot_cfg": SceneEntityCfg("robot"),
-                "spawn_height": 0.0,
+                "min_spawn_height": 1.6,
                 "lateral_spawn_variance": 0.0,
                 "frontal_spawn_variance": 0.0,
-                "throw_origin_distance": 0.0,
+                "max_throw_origin_distance": 0.0,
             },
         ),
         "lock_non_left_arm_joints": EventTermCfg(
@@ -217,18 +217,18 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
         ######################
         "total_bounces": RewardTermCfg(
             func=mdp.bounce_reward,
-            weight=1.8,
+            weight=2.2,
             params={"sensor_name": "paddle_ball_contact"},
         ),
         "ball_height": RewardTermCfg(
             func=mdp.ball_height_reward,
-            weight=5.0,
+            weight=4.5,
             ####
             params={"target_height": 1.4},
         ),
         "bounce_rhythm": RewardTermCfg(
             func=mdp.bounce_rhythm_reward,
-            weight=0.48,
+            weight=0.25,
             params={"sensor_name": "paddle_ball_contact"},
         ),
         "ball_paddle_tracking": RewardTermCfg(
@@ -236,11 +236,11 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
         ),
         "paddle_height_consistency": RewardTermCfg(
             func=mdp.paddle_height_consistency_reward,
-            weight=0.88,
+            weight=1.4,
             params={"target_height": 0.8},
         ),
         "ball_trajectory_consistency": RewardTermCfg(
-            func=mdp.ball_trajectory_consistency_reward, weight=1.3
+            func=mdp.ball_trajectory_consistency_reward, weight=1.7
         ),
         #####################
         # Non task-specific #
@@ -332,7 +332,7 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
                     },
                     # Stage 4: worst-case robustness stress test.
                     {
-                        "step": 9400 * 24,
+                        "step": 9000 * 24,
                         "camera_fps": 15.0,
                         "update_prob": None,
                         "dropout_prob": 0.12,
@@ -352,42 +352,42 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
             params={
                 "event_term_name": "reset_arm_then_ball",
                 # Variances are normalized [0, 1] fractions of max spawn ranges.
+                # Spawn height is sampled in [1.6, min_spawn_height].
                 "stages": [
                     {
-                        # Spawn height quite high to give plenty of time to react
                         "step": 0,
-                        "lateral_spawn_variance": 0.5,
-                        "frontal_spawn_variance": 0.4,
-                        "throw_origin_distance": 0.0,
-                        "spawn_height": 1.4,
+                        "min_spawn_height": 1.5,
+                        "lateral_spawn_variance": 0.2,
+                        "frontal_spawn_variance": 0.2,
+                        "max_throw_origin_distance": 0.05,
                     },
                     {
                         "step": 1000 * 24,
-                        "lateral_spawn_variance": 0.62,
+                        "min_spawn_height": 1.3,
+                        "lateral_spawn_variance": 0.5,
                         "frontal_spawn_variance": 0.5,
-                        "throw_origin_distance": 0.2,
-                        "spawn_height": 1.2,
+                        "max_throw_origin_distance": 0.1,
                     },
                     {
                         "step": 3200 * 24,
+                        "min_spawn_height": 1.05,
                         "lateral_spawn_variance": 0.82,
                         "frontal_spawn_variance": 0.65,
-                        "throw_origin_distance": 0.4,
-                        "spawn_height": 1.0,
+                        "max_throw_origin_distance": 0.12,
                     },
                     {
                         "step": 5600 * 24,
+                        "min_spawn_height": 0.83,
                         "lateral_spawn_variance": 1.0,
                         "frontal_spawn_variance": 1.0,
-                        "throw_origin_distance": 0.6,
-                        "spawn_height": 0.95,
+                        "max_throw_origin_distance": 0.15,
                     },
                     {
                         "step": 8000 * 24,
+                        "min_spawn_height": 0.65,
                         "lateral_spawn_variance": 1.0,
                         "frontal_spawn_variance": 1.0,
-                        "throw_origin_distance": 0.8,
-                        "spawn_height": 0.7,
+                        "max_throw_origin_distance": 0.2,
                     },
                 ],
             },

@@ -22,9 +22,10 @@ _DEFAULT_ROBOT_CFG = SceneEntityCfg("robot")
 
 # Spawn ranges in the paddle local frame:
 # - local +X: frontal axis (front/back relative to paddle)
-# - local +Z: lateral axis (left/right relative to paddle)
-BALL_SPAWN_MAX_LATERAL_RANGE = (-0.15, 0.3)  # 15 cm left, 30 cm right
+# - local +Y: lateral axis (left/right relative to paddle)
+BALL_SPAWN_MAX_LATERAL_RANGE = (-0.12, 0.15)  # 12 cm left, 15 cm right
 BALL_SPAWN_MAX_FRONTAL_RANGE = (-0.05, 0.15)  # 5 cm behind, 15 cm in front
+BALL_SPAWN_DEFAULT_HEIGHT = 1.6  # default vertical offset above paddle center
 
 
 def reset_ball(
@@ -32,17 +33,17 @@ def reset_ball(
     env_ids: torch.Tensor | None,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
     robot_cfg: SceneEntityCfg = _DEFAULT_ROBOT_CFG,
-    spawn_height: float = 0.70,
+    min_spawn_height: float = BALL_SPAWN_DEFAULT_HEIGHT,
     lateral_spawn_variance: float = 0.0,
     frontal_spawn_variance: float = 0.0,
-    throw_origin_distance: float = 0.0,
+    max_throw_origin_distance: float = 0.0,
 ):
     # EC: TODO -> Add variance to angle of entry to mimic a human gently tossing the ball to the agent
     """Reset and spawn ball relative to the paddle.
 
     Notes:
       - MuJoCo world +Z is vertical (up/down).
-      - ``spawn_height`` always offsets along world +Z.
+      - Spawn height is sampled uniformly in [1.6, min_spawn_height].
       - ``frontal/lateral`` variances are sampled in the paddle local frame.
     """
     if env_ids is None:
@@ -70,6 +71,15 @@ def reset_ball(
     # Frontal and lateral spawn offsets are sampled as fractions of max ranges.
     frontal_scale = max(0.0, min(1.0, float(frontal_spawn_variance)))
     lateral_scale = max(0.0, min(1.0, float(lateral_spawn_variance)))
+    min_height = float(min_spawn_height)
+    spawn_height_low = min(BALL_SPAWN_DEFAULT_HEIGHT, min_height)
+    spawn_height_high = max(BALL_SPAWN_DEFAULT_HEIGHT, min_height)
+    spawn_height = sample_uniform(
+        torch.full((num,), spawn_height_low, device=device),
+        torch.full((num,), spawn_height_high, device=device),
+        (num,),
+        device=device,
+    )
     frontal_low = BALL_SPAWN_MAX_FRONTAL_RANGE[0] * frontal_scale
     frontal_high = BALL_SPAWN_MAX_FRONTAL_RANGE[1] * frontal_scale
     lateral_low = BALL_SPAWN_MAX_LATERAL_RANGE[0] * lateral_scale
@@ -91,8 +101,8 @@ def reset_ball(
     basis_x_w = quat_apply(
         paddle_quat_w, torch.tensor([1.0, 0.0, 0.0], device=device).repeat(num, 1)
     )
-    basis_z_w = quat_apply(
-        paddle_quat_w, torch.tensor([0.0, 0.0, 1.0], device=device).repeat(num, 1)
+    basis_y_w = quat_apply(
+        paddle_quat_w, torch.tensor([0.0, 1.0, 0.0], device=device).repeat(num, 1)
     )
 
     # Target point is above paddle center with lateral/frontal variance.
@@ -100,18 +110,23 @@ def reset_ball(
     target_pos_w[:, 2] += spawn_height
     target_pos_w += (
         frontal_offset.unsqueeze(-1) * basis_x_w
-        + lateral_offset.unsqueeze(-1) * basis_z_w
+        + lateral_offset.unsqueeze(-1) * basis_y_w
     )
 
-    # Throw origin is shifted along paddle frontal axis.
-    throw_dist = float(throw_origin_distance)
-    spawn_pos_w = target_pos_w + throw_dist * basis_x_w
+    # Throw origin is shifted along paddle frontal axis by a random distance in [0, max_throw_origin_distance].
+    throw_dist = sample_uniform(
+        torch.zeros(num, device=device),
+        torch.full((num,), float(max_throw_origin_distance), device=device),
+        (num,),
+        device=device,
+    )
+    spawn_pos_w = target_pos_w + throw_dist.unsqueeze(-1) * basis_x_w
 
     # Choose horizontal velocity so the ball reaches target_xy after free-fall time.
     g = 9.81
-    t_fall = max((2.0 * spawn_height / g) ** 0.5, 1e-6)
+    t_fall = torch.sqrt(torch.clamp(2.0 * spawn_height / g, min=1e-6))
     delta_xy = target_pos_w[:, :2] - spawn_pos_w[:, :2]
-    v0_xy = delta_xy / t_fall
+    v0_xy = delta_xy / t_fall.unsqueeze(-1)
     v0 = torch.zeros((num, 3), device=device)
     v0[:, :2] = v0_xy
 
@@ -132,10 +147,10 @@ def reset_arm_then_ball(
     velocity_range: tuple[float, float] = (0.0, 0.0),
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
     robot_cfg: SceneEntityCfg = _DEFAULT_ROBOT_CFG,
-    spawn_height: float = 0.70,
+    min_spawn_height: float = BALL_SPAWN_DEFAULT_HEIGHT,
     lateral_spawn_variance: float = 0.0,
     frontal_spawn_variance: float = 0.0,
-    throw_origin_distance: float = 0.0,
+    max_throw_origin_distance: float = 0.0,
 ) -> None:
     """Reset left arm joints, sync kinematics, then spawn ball above paddle."""
     if env_ids is None:
@@ -159,8 +174,8 @@ def reset_arm_then_ball(
         env_ids=env_ids,
         asset_cfg=asset_cfg,
         robot_cfg=robot_cfg,
-        spawn_height=spawn_height,
+        min_spawn_height=min_spawn_height,
         lateral_spawn_variance=lateral_spawn_variance,
         frontal_spawn_variance=frontal_spawn_variance,
-        throw_origin_distance=throw_origin_distance,
+        max_throw_origin_distance=max_throw_origin_distance,
     )

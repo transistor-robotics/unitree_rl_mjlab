@@ -28,9 +28,10 @@ class BallSpawnStage(TypedDict, total=False):
     """Stage definition for reset-ball spawn difficulty."""
 
     step: int
+    min_spawn_height: float
     lateral_spawn_variance: float
     frontal_spawn_variance: float
-    throw_origin_distance: float
+    max_throw_origin_distance: float
 
 
 class BounceQualityStage(TypedDict, total=False):
@@ -221,12 +222,12 @@ def ball_spawn_difficulty_schedule(
         term_cfg.params["frontal_spawn_variance"] = float(
             active["frontal_spawn_variance"]
         )
-    if active.get("throw_origin_distance") is not None:
-        term_cfg.params["throw_origin_distance"] = float(
-            active["throw_origin_distance"]
+    if active.get("max_throw_origin_distance") is not None:
+        term_cfg.params["max_throw_origin_distance"] = float(
+            active["max_throw_origin_distance"]
         )
-    if active.get("spawn_height") is not None:
-        term_cfg.params["spawn_height"] = float(active["spawn_height"])
+    if active.get("min_spawn_height") is not None:
+        term_cfg.params["min_spawn_height"] = float(active["min_spawn_height"])
 
     return {
         "stage_idx": float(active_stage_idx),
@@ -236,10 +237,10 @@ def ball_spawn_difficulty_schedule(
         "frontal_spawn_variance": float(
             term_cfg.params.get("frontal_spawn_variance", -1.0)
         ),
-        "throw_origin_distance": float(
-            term_cfg.params.get("throw_origin_distance", -1.0)
+        "max_throw_origin_distance": float(
+            term_cfg.params.get("max_throw_origin_distance", -1.0)
         ),
-        "spawn_height": float(term_cfg.params.get("spawn_height", -1.0)),
+        "min_spawn_height": float(term_cfg.params.get("min_spawn_height", -1.0)),
     }
 
 
