@@ -365,7 +365,7 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
                         "step": 1000 * 24,
                         "lateral_spawn_variance": 0.62,
                         "frontal_spawn_variance": 0.5,
-                        "throw_origin_distance": 0.25,
+                        "throw_origin_distance": 0.2,
                         "spawn_height": 1.2,
                     },
                     {
@@ -386,7 +386,7 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
                         "step": 8000 * 24,
                         "lateral_spawn_variance": 1.0,
                         "frontal_spawn_variance": 1.0,
-                        "throw_origin_distance": 0.95,
+                        "throw_origin_distance": 0.8,
                         "spawn_height": 0.7,
                     },
                 ],
