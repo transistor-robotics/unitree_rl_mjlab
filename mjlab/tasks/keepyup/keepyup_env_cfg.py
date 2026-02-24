@@ -279,6 +279,8 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
             params={
                 # Stages are in env steps (common_step_counter).
                 # Approximate iteration mapping assumes num_steps_per_env ~= 24.
+                # Designed around a 0..10k training-step curriculum where
+                # spawn-difficulty jumps lead noise-difficulty jumps.
                 "stages": [
                     # Stage 0: near-oracle bootstrap.
                     {
@@ -294,7 +296,7 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
                     },
                     # Stage 1: mild realism.
                     {
-                        "step": 800 * 24,
+                        "step": 1800 * 24,
                         "camera_fps": 35.0,
                         "update_prob": None,
                         "dropout_prob": 0.02,
@@ -306,19 +308,19 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
                     },
                     # Stage 2: medium realism.
                     {
-                        "step": 2400 * 24,
-                        "camera_fps": 27.5,
+                        "step": 4200 * 24,
+                        "camera_fps": 30.0,
                         "update_prob": None,
-                        "dropout_prob": 0.05,
-                        "pos_noise_std": 0.010,
-                        "vel_noise_std": 0.09,
-                        "outlier_prob": 0.008,
+                        "dropout_prob": 0.04,
+                        "pos_noise_std": 0.009,
+                        "vel_noise_std": 0.085,
+                        "outlier_prob": 0.006,
                         "outlier_std": 0.04,
-                        "stale_vel_decay": 0.99,
+                        "stale_vel_decay": 0.992,
                     },
                     # Stage 3: target deployment realism (~20 fps effective).
                     {
-                        "step": 4000 * 24,
+                        "step": 6900 * 24,
                         "camera_fps": 20.0,
                         "update_prob": None,
                         "dropout_prob": 0.08,
@@ -327,6 +329,18 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
                         "outlier_prob": 0.01,
                         "outlier_std": 0.05,
                         "stale_vel_decay": 0.98,
+                    },
+                    # Stage 4: worst-case robustness stress test.
+                    {
+                        "step": 9400 * 24,
+                        "camera_fps": 15.0,
+                        "update_prob": None,
+                        "dropout_prob": 0.12,
+                        "pos_noise_std": 0.016,
+                        "vel_noise_std": 0.13,
+                        "outlier_prob": 0.02,
+                        "outlier_std": 0.07,
+                        "stale_vel_decay": 0.96,
                     },
                 ],
                 "term_name": "ball_state",
@@ -348,32 +362,31 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
                         "spawn_height": 1.4,
                     },
                     {
-                        "step": 1600 * 24,
-                        "lateral_spawn_variance": 0.65,
+                        "step": 1000 * 24,
+                        "lateral_spawn_variance": 0.62,
                         "frontal_spawn_variance": 0.5,
-                        "throw_origin_distance": 0.3,
+                        "throw_origin_distance": 0.25,
                         "spawn_height": 1.2,
                     },
                     {
                         "step": 3200 * 24,
-                        "lateral_spawn_variance": 0.9,
-                        "frontal_spawn_variance": 0.7,
-                        "throw_origin_distance": 0.5,
+                        "lateral_spawn_variance": 0.82,
+                        "frontal_spawn_variance": 0.65,
+                        "throw_origin_distance": 0.4,
                         "spawn_height": 1.0,
-                    },
-                    {
-                        "step": 4800 * 24,
-                        "lateral_spawn_variance": 1.0,
-                        "frontal_spawn_variance": 0.9,
-                        "throw_origin_distance": 0.8,
-                        "spawn_height": 1.0,
- 
                     },
                     {
                         "step": 5600 * 24,
                         "lateral_spawn_variance": 1.0,
                         "frontal_spawn_variance": 1.0,
-                        "throw_origin_distance": 1.2,
+                        "throw_origin_distance": 0.6,
+                        "spawn_height": 0.95,
+                    },
+                    {
+                        "step": 8000 * 24,
+                        "lateral_spawn_variance": 1.0,
+                        "frontal_spawn_variance": 1.0,
+                        "throw_origin_distance": 0.95,
                         "spawn_height": 0.7,
                     },
                 ],
