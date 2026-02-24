@@ -35,6 +35,18 @@ KEEPYUP_INIT_STATE = EntityCfg.InitialStateCfg(
     joint_vel={".*": 0.0},
 )
 
+# KeepyUp-specific left-arm range reduction for safer, less self-colliding motion.
+# Values are in radians and intentionally tighter than stock G1 model ranges.
+_KEEPYUP_LEFT_ARM_JOINT_RANGES = {
+    "left_shoulder_pitch_joint": (-1.8, 1.8),
+    "left_shoulder_roll_joint": (-0.6, 1.6),
+    "left_shoulder_yaw_joint": (-1.2, 1.2),
+    "left_elbow_joint": (-0.4, 1.8),
+    "left_wrist_roll_joint": (-1.2, 1.8),
+    "left_wrist_pitch_joint": (-0.9, 0.9),
+    "left_wrist_yaw_joint": (-1.0, 1.0),
+}
+
 
 def get_g1_with_paddle_cfg(fixed_base: bool = True) -> EntityCfg:
     """Create G1 robot configuration with paddle attached to left hand.
@@ -59,6 +71,9 @@ def get_g1_with_paddle_cfg(fixed_base: bool = True) -> EntityCfg:
         if fixed_base:
             free_joint = spec.joint("floating_base_joint")
             spec.delete(free_joint)
+
+        for joint_name, joint_range in _KEEPYUP_LEFT_ARM_JOINT_RANGES.items():
+            spec.joint(joint_name).range = joint_range
 
         # ------------------------------------------------------------------
         # Attach paddle to left hand

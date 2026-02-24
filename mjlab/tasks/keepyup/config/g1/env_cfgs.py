@@ -2,10 +2,10 @@
 
 from mjlab.asset_zoo.robots import G1_ACTION_SCALE
 from mjlab.envs import ManagerBasedRlEnvCfg
-from mjlab.envs.mdp.actions import JointPositionActionCfg
 from mjlab.sensor import ContactMatch, ContactSensorCfg
 from mjlab.tasks.keepyup.ball import get_pingpong_ball_cfg
 from mjlab.tasks.keepyup.keepyup_env_cfg import make_keepyup_env_cfg
+from mjlab.tasks.keepyup.mdp.actions import SlewRateJointPositionActionCfg
 from mjlab.tasks.keepyup.paddle import get_g1_with_paddle_cfg
 
 
@@ -82,7 +82,7 @@ def unitree_g1_keepyup_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     
     # Set action scale for left arm joints using G1's actuator-specific scales
     joint_pos_action = cfg.actions["joint_pos"]
-    assert isinstance(joint_pos_action, JointPositionActionCfg)
+    assert isinstance(joint_pos_action, SlewRateJointPositionActionCfg)
     
     # Extract scales for left arm joints from G1_ACTION_SCALE
     left_arm_scale = {
@@ -96,6 +96,15 @@ def unitree_g1_keepyup_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     }
     
     joint_pos_action.scale = left_arm_scale
+    joint_pos_action.max_velocity = {
+        "left_shoulder_pitch_joint": 1.4,
+        "left_shoulder_roll_joint": 1.4,
+        "left_shoulder_yaw_joint": 1.5,
+        "left_elbow_joint": 1.7,
+        "left_wrist_roll_joint": 2.0,
+        "left_wrist_pitch_joint": 1.7,
+        "left_wrist_yaw_joint": 1.7,
+    }
     
     # Play mode overrides
     if play:

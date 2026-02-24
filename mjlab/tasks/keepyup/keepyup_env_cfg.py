@@ -3,7 +3,6 @@
 import math
 
 from mjlab.envs import ManagerBasedRlEnvCfg
-from mjlab.envs.mdp.actions import JointPositionActionCfg
 from mjlab.managers.action_manager import ActionTermCfg
 from mjlab.managers.curriculum_manager import CurriculumTermCfg
 from mjlab.managers.event_manager import EventTermCfg
@@ -138,7 +137,7 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
 
     # Only control the 7 left arm joints
     actions: dict[str, ActionTermCfg] = {
-        "joint_pos": JointPositionActionCfg(
+        "joint_pos": mdp.SlewRateJointPositionActionCfg(
             entity_name="robot",
             actuator_names=(
                 "left_shoulder_pitch_joint",
@@ -151,6 +150,9 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
             ),
             scale=0.25,  # Will be overridden per-robot with proper actuator scales
             use_default_offset=True,
+            # Keep default uncapped here; configure explicit caps per-robot.
+            max_velocity=float("inf"),
+            clip_to_joint_limits=True,
         )
     }
 
