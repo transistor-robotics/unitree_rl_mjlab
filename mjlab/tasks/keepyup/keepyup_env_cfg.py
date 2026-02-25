@@ -308,7 +308,7 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
                     },
                     # Stage 2: medium realism.
                     {
-                        "step": 3000 * 24,
+                        "step": 5000 * 24,
                         "camera_fps": 30.0,
                         "update_prob": None,
                         "dropout_prob": 0.04,
@@ -320,7 +320,7 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
                     },
                     # Stage 3: target deployment realism (~20 fps effective).
                     {
-                        "step": 5000 * 24,
+                        "step": 10000 * 24,
                         "camera_fps": 20.0,
                         "update_prob": None,
                         "dropout_prob": 0.08,
@@ -332,7 +332,7 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
                     },
                     # Stage 4: worst-case robustness stress test.
                     {
-                        "step": 7500 * 24,
+                        "step": 15000 * 24,
                         "camera_fps": 15.0,
                         "update_prob": None,
                         "dropout_prob": 0.12,
@@ -369,21 +369,21 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
                         "max_throw_origin_distance": 0.1,
                     },
                     {
-                        "step": 3000 * 24,
+                        "step": 5000 * 24,
                         "min_spawn_height": 1.05,
                         "lateral_spawn_variance": 0.82,
                         "frontal_spawn_variance": 0.65,
                         "max_throw_origin_distance": 0.12,
                     },
                     {
-                        "step": 5000 * 24,
+                        "step": 10000 * 24,
                         "min_spawn_height": 0.83,
                         "lateral_spawn_variance": 1.0,
                         "frontal_spawn_variance": 1.0,
                         "max_throw_origin_distance": 0.15,
                     },
                     {
-                        "step": 7500 * 24,
+                        "step": 15000 * 24,
                         "min_spawn_height": 0.65,
                         "lateral_spawn_variance": 1.0,
                         "frontal_spawn_variance": 1.0,
