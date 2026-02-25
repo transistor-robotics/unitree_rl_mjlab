@@ -217,18 +217,18 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
         ######################
         "total_bounces": RewardTermCfg(
             func=mdp.bounce_reward,
-            weight=2.2,
+            weight=0.9,
             params={"sensor_name": "paddle_ball_contact"},
         ),
         "ball_height": RewardTermCfg(
             func=mdp.ball_height_reward,
-            weight=4.5,
+            weight=3.1,
             ####
             params={"target_height": 1.4},
         ),
         "bounce_rhythm": RewardTermCfg(
             func=mdp.bounce_rhythm_reward,
-            weight=0.25,
+            weight=0.18,
             params={"sensor_name": "paddle_ball_contact"},
         ),
         "ball_paddle_tracking": RewardTermCfg(
@@ -236,11 +236,11 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
         ),
         "paddle_height_consistency": RewardTermCfg(
             func=mdp.paddle_height_consistency_reward,
-            weight=1.4,
-            params={"target_height": 0.8},
+            weight=2.8,
+            params={"target_height": 0.85},
         ),
         "ball_trajectory_consistency": RewardTermCfg(
-            func=mdp.ball_trajectory_consistency_reward, weight=1.7
+            func=mdp.ball_trajectory_consistency_reward, weight=1.1
         ),
         #####################
         # Non task-specific #
@@ -296,8 +296,8 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
                     },
                     # Stage 1: mild realism.
                     {
-                        "step": 1800 * 24,
-                        "camera_fps": 35.0,
+                        "step": 1000 * 24,
+                        "camera_fps": 50.0,
                         "update_prob": None,
                         "dropout_prob": 0.02,
                         "pos_noise_std": 0.006,
@@ -308,7 +308,7 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
                     },
                     # Stage 2: medium realism.
                     {
-                        "step": 4200 * 24,
+                        "step": 3000 * 24,
                         "camera_fps": 30.0,
                         "update_prob": None,
                         "dropout_prob": 0.04,
@@ -320,7 +320,7 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
                     },
                     # Stage 3: target deployment realism (~20 fps effective).
                     {
-                        "step": 6900 * 24,
+                        "step": 5000 * 24,
                         "camera_fps": 20.0,
                         "update_prob": None,
                         "dropout_prob": 0.08,
@@ -332,7 +332,7 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
                     },
                     # Stage 4: worst-case robustness stress test.
                     {
-                        "step": 9000 * 24,
+                        "step": 7500 * 24,
                         "camera_fps": 15.0,
                         "update_prob": None,
                         "dropout_prob": 0.12,
@@ -369,21 +369,21 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
                         "max_throw_origin_distance": 0.1,
                     },
                     {
-                        "step": 3200 * 24,
+                        "step": 3000 * 24,
                         "min_spawn_height": 1.05,
                         "lateral_spawn_variance": 0.82,
                         "frontal_spawn_variance": 0.65,
                         "max_throw_origin_distance": 0.12,
                     },
                     {
-                        "step": 5600 * 24,
+                        "step": 5000 * 24,
                         "min_spawn_height": 0.83,
                         "lateral_spawn_variance": 1.0,
                         "frontal_spawn_variance": 1.0,
                         "max_throw_origin_distance": 0.15,
                     },
                     {
-                        "step": 8000 * 24,
+                        "step": 7500 * 24,
                         "min_spawn_height": 0.65,
                         "lateral_spawn_variance": 1.0,
                         "frontal_spawn_variance": 1.0,

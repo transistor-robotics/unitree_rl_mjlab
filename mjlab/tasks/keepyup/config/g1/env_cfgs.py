@@ -96,13 +96,13 @@ def unitree_g1_keepyup_env_cfg(play: bool = False) -> ManagerBasedRlEnvCfg:
     }
     
     joint_pos_action.scale = left_arm_scale
-    # Slow shoulder movement down for real-world safety and to prevent self-collisions
+    # Slow arm movement down for real-world safety and to prevent self-collisions
     joint_pos_action.max_velocity = {
-        "left_shoulder_pitch_joint": 0.5, 
-        "left_shoulder_roll_joint": 0.5, 
-        "left_shoulder_yaw_joint": 0.5, 
-        "left_elbow_joint": 1.2,
-        "left_wrist_roll_joint": 2.0,
+        "left_shoulder_pitch_joint": 0.1, 
+        "left_shoulder_roll_joint": 0.1, 
+        "left_shoulder_yaw_joint": 0.1, 
+        "left_elbow_joint": 0.15,
+        "left_wrist_roll_joint": 1.8,
         "left_wrist_pitch_joint": 1.7,
         "left_wrist_yaw_joint": 1.7,
     }
