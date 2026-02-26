@@ -17,6 +17,12 @@ from mjlab.utils.lab_api.math import quat_apply
 from mjlab.viewer import NativeMujocoViewer, ViserPlayViewer
 
 
+class TrainBallstateVisionCfg:
+  """Backward-compat shim for older checkpoints pickled from __main__."""
+
+  pass
+
+
 @dataclass(frozen=True)
 class PlayBallstateVisionCfg:
   task_id: str = "Mjlab-BallState-Vision-Unitree-G1"
@@ -114,7 +120,11 @@ def main() -> None:
   estimator = BallStateEstimator(
     history=cfg.history, input_h=cfg.depth_h, input_w=cfg.depth_w
   ).to(device)
-  ckpt = torch.load(Path(cfg.checkpoint).expanduser().resolve(), map_location=device)
+  ckpt = torch.load(
+    Path(cfg.checkpoint).expanduser().resolve(),
+    map_location=device,
+    weights_only=False,
+  )
   estimator.load_state_dict(ckpt["model_state_dict"])
   estimator.eval()
 

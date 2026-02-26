@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from dataclasses import asdict
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -100,11 +101,18 @@ def main() -> None:
       ckpt = {
         "model_state_dict": model.state_dict(),
         "step": step,
-        "cfg": cfg,
+        "cfg": asdict(cfg),
       }
       torch.save(ckpt, out_dir / f"model_{step}.pt")
 
-  torch.save({"model_state_dict": model.state_dict(), "step": cfg.max_steps, "cfg": cfg}, out_dir / "model_latest.pt")
+  torch.save(
+    {
+      "model_state_dict": model.state_dict(),
+      "step": cfg.max_steps,
+      "cfg": asdict(cfg),
+    },
+    out_dir / "model_latest.pt",
+  )
   env.close()
   print(f"[done] Saved checkpoints under {out_dir}")
 
