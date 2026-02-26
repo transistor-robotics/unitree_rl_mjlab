@@ -302,7 +302,7 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
                 "reward_term_name": "total_bounces",
                 "promote_bounces": 2.0,
                 "rollback_bounces": 1.0,
-                "promote_threshold": 0.8,
+                "promote_threshold": 0.65,
                 "rollback_threshold": 0.3,
                 "promote_patience": 6,
                 "rollback_patience": 3,
@@ -314,14 +314,14 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
                     {
                         "min_spawn_height": 1.5,
                         "lateral_spawn_variance": 0.2,
-                        "frontal_spawn_variance": 0.2,
-                        "max_throw_origin_distance": 0.05,
+                        "frontal_spawn_variance": 0.0,
+                        "max_throw_origin_distance": 0.00,
                     },
                     {
                         "min_spawn_height": 1.3,
                         "lateral_spawn_variance": 0.5,
                         "frontal_spawn_variance": 0.5,
-                        "max_throw_origin_distance": 0.1,
+                        "max_throw_origin_distance": 0.05,
                     },
                     {
                         "min_spawn_height": 1.05,
