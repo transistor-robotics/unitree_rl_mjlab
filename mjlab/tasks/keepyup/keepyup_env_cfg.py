@@ -277,12 +277,8 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
         "ball_state_noise": CurriculumTermCfg(
             func=mdp.ball_state_noise_schedule,
             params={
-                # Stages are in env steps (common_step_counter).
-                # Approximate iteration mapping assumes num_steps_per_env ~= 24.
-                # Designed around a 0..10k training-step curriculum where
-                # spawn-difficulty jumps lead noise-difficulty jumps.
+                # Spawn-only ablation: keep vision fixed at easiest settings.
                 "stages": [
-                    # Stage 0: near-oracle bootstrap.
                     {
                         "step": 0,
                         "camera_fps": 200.0,
@@ -294,96 +290,52 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
                         "outlier_std": 0.0,
                         "stale_vel_decay": 1.0,
                     },
-                    # Stage 1: mild realism.
-                    {
-                        "step": 1000 * 24,
-                        "camera_fps": 50.0,
-                        "update_prob": None,
-                        "dropout_prob": 0.02,
-                        "pos_noise_std": 0.006,
-                        "vel_noise_std": 0.06,
-                        "outlier_prob": 0.003,
-                        "outlier_std": 0.03,
-                        "stale_vel_decay": 0.995,
-                    },
-                    # Stage 2: medium realism.
-                    {
-                        "step": 5000 * 24,
-                        "camera_fps": 30.0,
-                        "update_prob": None,
-                        "dropout_prob": 0.04,
-                        "pos_noise_std": 0.009,
-                        "vel_noise_std": 0.085,
-                        "outlier_prob": 0.006,
-                        "outlier_std": 0.04,
-                        "stale_vel_decay": 0.992,
-                    },
-                    # Stage 3: target deployment realism (~20 fps effective).
-                    {
-                        "step": 10000 * 24,
-                        "camera_fps": 20.0,
-                        "update_prob": None,
-                        "dropout_prob": 0.08,
-                        "pos_noise_std": 0.012,
-                        "vel_noise_std": 0.10,
-                        "outlier_prob": 0.01,
-                        "outlier_std": 0.05,
-                        "stale_vel_decay": 0.98,
-                    },
-                    # Stage 4: worst-case robustness stress test.
-                    {
-                        "step": 15000 * 24,
-                        "camera_fps": 15.0,
-                        "update_prob": None,
-                        "dropout_prob": 0.12,
-                        "pos_noise_std": 0.016,
-                        "vel_noise_std": 0.13,
-                        "outlier_prob": 0.02,
-                        "outlier_std": 0.07,
-                        "stale_vel_decay": 0.96,
-                    },
                 ],
                 "term_name": "ball_state",
                 "groups": ("policy", "critic"),
             },
         ),
         "ball_spawn_difficulty": CurriculumTermCfg(
-            func=mdp.ball_spawn_difficulty_schedule,
+            func=mdp.PerformanceGatedSpawnSchedule,
             params={
                 "event_term_name": "reset_arm_then_ball",
+                "reward_term_name": "total_bounces",
+                "promote_bounces": 3.0,
+                "rollback_bounces": 1.0,
+                "promote_threshold": 0.8,
+                "rollback_threshold": 0.3,
+                "promote_patience": 6,
+                "rollback_patience": 3,
+                "ema_alpha": 0.1,
+                "min_episodes_per_window": 64,
                 # Variances are normalized [0, 1] fractions of max spawn ranges.
                 # Spawn height is sampled in [1.6, min_spawn_height].
                 "stages": [
                     {
-                        "step": 0,
                         "min_spawn_height": 1.5,
                         "lateral_spawn_variance": 0.2,
                         "frontal_spawn_variance": 0.2,
                         "max_throw_origin_distance": 0.05,
                     },
                     {
-                        "step": 1000 * 24,
                         "min_spawn_height": 1.3,
                         "lateral_spawn_variance": 0.5,
                         "frontal_spawn_variance": 0.5,
                         "max_throw_origin_distance": 0.1,
                     },
                     {
-                        "step": 5000 * 24,
                         "min_spawn_height": 1.05,
                         "lateral_spawn_variance": 0.82,
                         "frontal_spawn_variance": 0.65,
                         "max_throw_origin_distance": 0.12,
                     },
                     {
-                        "step": 10000 * 24,
                         "min_spawn_height": 0.83,
                         "lateral_spawn_variance": 1.0,
                         "frontal_spawn_variance": 1.0,
                         "max_throw_origin_distance": 0.15,
                     },
                     {
-                        "step": 15000 * 24,
                         "min_spawn_height": 0.65,
                         "lateral_spawn_variance": 1.0,
                         "frontal_spawn_variance": 1.0,

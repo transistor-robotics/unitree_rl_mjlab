@@ -60,6 +60,228 @@ class BounceRewardStage(TypedDict, total=False):
     target_upward_velocity: float
 
 
+class PerformanceGatedSpawnSchedule:
+    """Performance-gated spawn curriculum based on completed-episode bounce counts.
+
+    The stage advances only when recent success is sustained and rolls back when
+    low-bounce failure persists. This avoids fixed step-based difficulty cliffs.
+    """
+
+    def __init__(self, cfg, env: "ManagerBasedRlEnv"):
+        del cfg  # Configuration is passed into __call__ via term params.
+        self._env = env
+        self._stage_idx = 0
+
+        self._ema_avg_episode_bounces: float | None = None
+        self._ema_p_ge_promote: float | None = None
+        self._ema_p_ge_rollback: float | None = None
+
+        self._promote_streak = 0
+        self._rollback_streak = 0
+        self._last_transition = 0  # -1 rollback, +1 promote, 0 no change.
+        self._episodes_accum = 0
+        self._bounce_sum_accum = 0.0
+        self._ge_promote_accum = 0.0
+        self._ge_rollback_accum = 0.0
+
+    def reset(self, env_ids: torch.Tensor | slice | None = None) -> None:
+        del env_ids  # Keep running statistics across episodes.
+
+    @staticmethod
+    def _apply_stage_to_event(
+        env: "ManagerBasedRlEnv", stage: BallSpawnStage, event_term_name: str
+    ) -> dict[str, float]:
+        try:
+            term_cfg = env.event_manager.get_term_cfg(event_term_name)
+        except ValueError:
+            return {}
+
+        if stage.get("lateral_spawn_variance") is not None:
+            term_cfg.params["lateral_spawn_variance"] = float(
+                stage["lateral_spawn_variance"]
+            )
+        if stage.get("frontal_spawn_variance") is not None:
+            term_cfg.params["frontal_spawn_variance"] = float(
+                stage["frontal_spawn_variance"]
+            )
+        if stage.get("max_throw_origin_distance") is not None:
+            term_cfg.params["max_throw_origin_distance"] = float(
+                stage["max_throw_origin_distance"]
+            )
+        if stage.get("min_spawn_height") is not None:
+            term_cfg.params["min_spawn_height"] = float(stage["min_spawn_height"])
+
+        return {
+            "lateral_spawn_variance": float(
+                term_cfg.params.get("lateral_spawn_variance", -1.0)
+            ),
+            "frontal_spawn_variance": float(
+                term_cfg.params.get("frontal_spawn_variance", -1.0)
+            ),
+            "max_throw_origin_distance": float(
+                term_cfg.params.get("max_throw_origin_distance", -1.0)
+            ),
+            "min_spawn_height": float(term_cfg.params.get("min_spawn_height", -1.0)),
+        }
+
+    def __call__(
+        self,
+        env: "ManagerBasedRlEnv",
+        env_ids: torch.Tensor | slice | None,
+        stages: list[BallSpawnStage],
+        event_term_name: str = "reset_ball",
+        reward_term_name: str = "total_bounces",
+        promote_bounces: float = 3.0,
+        rollback_bounces: float = 1.0,
+        promote_threshold: float = 0.8,
+        rollback_threshold: float = 0.3,
+        promote_patience: int = 6,
+        rollback_patience: int = 3,
+        ema_alpha: float = 0.1,
+        min_episodes_per_window: int = 64,
+    ) -> dict[str, float]:
+        if len(stages) == 0:
+            return {}
+
+        self._last_transition = 0
+        reward_cfg = env.reward_manager.get_term_cfg(reward_term_name)
+        episode_sums = env.reward_manager._episode_sums.get(reward_term_name)
+        if episode_sums is None:
+            stage_values = self._apply_stage_to_event(
+                env, stages[self._stage_idx], event_term_name
+            )
+            return {
+                "stage_idx": float(self._stage_idx),
+                "last_transition": float(self._last_transition),
+                **stage_values,
+            }
+
+        if env_ids is None:
+            done_env_ids = torch.arange(env.num_envs, dtype=torch.long, device=env.device)
+        elif isinstance(env_ids, slice):
+            done_env_ids = torch.arange(env.num_envs, dtype=torch.long, device=env.device)[
+                env_ids
+            ]
+        else:
+            done_env_ids = env_ids
+        num_episodes = int(done_env_ids.numel())
+
+        avg_episode_bounces_window = -1.0
+        p_ge_promote_window = -1.0
+        p_ge_rollback_window = -1.0
+
+        # Skip startup reset to avoid contaminating curriculum statistics with
+        # a non-episode initialization pass.
+        if num_episodes > 0 and env.common_step_counter > 0:
+            weight_scale = reward_cfg.weight
+            if getattr(env.reward_manager, "_scale_by_dt", True):
+                weight_scale *= float(env.step_dt)
+            if abs(weight_scale) < 1e-8:
+                weight_scale = 1.0
+
+            bounce_counts = torch.clamp(episode_sums[done_env_ids] / weight_scale, min=0.0)
+            self._episodes_accum += num_episodes
+            self._bounce_sum_accum += float(bounce_counts.sum().item())
+            self._ge_promote_accum += float(
+                (bounce_counts >= promote_bounces).float().sum().item()
+            )
+            self._ge_rollback_accum += float(
+                (bounce_counts >= rollback_bounces).float().sum().item()
+            )
+
+            if self._episodes_accum >= int(min_episodes_per_window):
+                avg_episode_bounces_window = self._bounce_sum_accum / max(
+                    1, self._episodes_accum
+                )
+                p_ge_promote_window = self._ge_promote_accum / max(1, self._episodes_accum)
+                p_ge_rollback_window = self._ge_rollback_accum / max(1, self._episodes_accum)
+
+                self._episodes_accum = 0
+                self._bounce_sum_accum = 0.0
+                self._ge_promote_accum = 0.0
+                self._ge_rollback_accum = 0.0
+
+                if self._ema_avg_episode_bounces is None:
+                    self._ema_avg_episode_bounces = avg_episode_bounces_window
+                    self._ema_p_ge_promote = p_ge_promote_window
+                    self._ema_p_ge_rollback = p_ge_rollback_window
+                else:
+                    self._ema_avg_episode_bounces = (
+                        (1.0 - ema_alpha) * self._ema_avg_episode_bounces
+                        + ema_alpha * avg_episode_bounces_window
+                    )
+                    self._ema_p_ge_promote = (
+                        (1.0 - ema_alpha) * self._ema_p_ge_promote
+                        + ema_alpha * p_ge_promote_window
+                    )
+                    self._ema_p_ge_rollback = (
+                        (1.0 - ema_alpha) * self._ema_p_ge_rollback
+                        + ema_alpha * p_ge_rollback_window
+                    )
+
+                promote_ready = (
+                    self._ema_p_ge_promote is not None
+                    and self._ema_p_ge_promote > promote_threshold
+                )
+                rollback_ready = (
+                    self._ema_p_ge_rollback is not None
+                    and self._ema_p_ge_rollback < rollback_threshold
+                )
+
+                if rollback_ready:
+                    self._rollback_streak += 1
+                else:
+                    self._rollback_streak = 0
+
+                if promote_ready:
+                    self._promote_streak += 1
+                else:
+                    self._promote_streak = 0
+
+                if (
+                    self._rollback_streak >= rollback_patience
+                    and self._stage_idx > 0
+                ):
+                    self._stage_idx -= 1
+                    self._rollback_streak = 0
+                    self._promote_streak = 0
+                    self._last_transition = -1
+                elif (
+                    self._promote_streak >= promote_patience
+                    and self._stage_idx < len(stages) - 1
+                ):
+                    self._stage_idx += 1
+                    self._promote_streak = 0
+                    self._rollback_streak = 0
+                    self._last_transition = 1
+
+        self._stage_idx = max(0, min(self._stage_idx, len(stages) - 1))
+        stage_values = self._apply_stage_to_event(
+            env, stages[self._stage_idx], event_term_name
+        )
+
+        return {
+            "stage_idx": float(self._stage_idx),
+            "episodes_in_window": float(num_episodes),
+            "avg_episode_bounces_window": float(avg_episode_bounces_window),
+            "p_ge_promote_window": float(p_ge_promote_window),
+            "p_ge_rollback_window": float(p_ge_rollback_window),
+            "ema_avg_episode_bounces": float(self._ema_avg_episode_bounces)
+            if self._ema_avg_episode_bounces is not None
+            else -1.0,
+            "ema_p_ge_promote": float(self._ema_p_ge_promote)
+            if self._ema_p_ge_promote is not None
+            else -1.0,
+            "ema_p_ge_rollback": float(self._ema_p_ge_rollback)
+            if self._ema_p_ge_rollback is not None
+            else -1.0,
+            "promote_streak": float(self._promote_streak),
+            "rollback_streak": float(self._rollback_streak),
+            "last_transition": float(self._last_transition),
+            **stage_values,
+        }
+
+
 def bounce_quality_schedule(
     env: ManagerBasedRlEnv,
     env_ids: torch.Tensor | slice | None,
