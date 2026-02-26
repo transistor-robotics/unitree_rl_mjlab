@@ -109,14 +109,14 @@ def reset_ball(
     lateral_low = BALL_SPAWN_MAX_LATERAL_RANGE[0] * lateral_scale
     lateral_high = BALL_SPAWN_MAX_LATERAL_RANGE[1] * lateral_scale
     frontal_offset = sample_uniform(
-        torch.full((num,), frontal_low, device=device),
-        torch.full((num,), frontal_high, device=device),
+        frontal_low,
+        frontal_high,
         (num,),
         device=device,
     )
     lateral_offset = sample_uniform(
-        torch.full((num,), lateral_low, device=device),
-        torch.full((num,), lateral_high, device=device),
+        lateral_low,
+        lateral_high,
         (num,),
         device=device,
     )
