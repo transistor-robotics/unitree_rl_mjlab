@@ -124,6 +124,47 @@ class PerformanceGatedSpawnSchedule:
             "min_spawn_height": float(term_cfg.params.get("min_spawn_height", -1.0)),
         }
 
+    @staticmethod
+    def _apply_mixed_stages_to_event(
+        env: "ManagerBasedRlEnv",
+        event_term_name: str,
+        stages: list[BallSpawnStage],
+        sampled_stage_idx: torch.Tensor,
+    ) -> dict[str, float]:
+        try:
+            term_cfg = env.event_manager.get_term_cfg(event_term_name)
+        except ValueError:
+            return {}
+
+        device = env.device
+        idx = sampled_stage_idx.long().to(device)
+        num = int(idx.numel())
+        if num == 0:
+            return {}
+
+        def _gather_param(key: str, fallback: float) -> torch.Tensor:
+            values = torch.empty((num,), dtype=torch.float32, device=device)
+            for i, stage_id in enumerate(idx.tolist()):
+                values[i] = float(stages[stage_id].get(key, fallback))
+            return values
+
+        term_cfg.params["min_spawn_height"] = _gather_param("min_spawn_height", 1.6)
+        term_cfg.params["lateral_spawn_variance"] = _gather_param(
+            "lateral_spawn_variance", 0.0
+        )
+        term_cfg.params["frontal_spawn_variance"] = _gather_param(
+            "frontal_spawn_variance", 0.0
+        )
+        term_cfg.params["max_throw_origin_distance"] = _gather_param(
+            "max_throw_origin_distance", 0.0
+        )
+
+        return {
+            "sampled_stage_min": float(idx.min().item()),
+            "sampled_stage_mean": float(idx.float().mean().item()),
+            "sampled_stage_max": float(idx.max().item()),
+        }
+
     def __call__(
         self,
         env: "ManagerBasedRlEnv",
@@ -139,6 +180,10 @@ class PerformanceGatedSpawnSchedule:
         rollback_patience: int = 3,
         ema_alpha: float = 0.1,
         min_episodes_per_window: int = 64,
+        use_stage_mixture: bool = True,
+        mix_current_prob: float = 0.5,
+        mix_easier_prob: float = 0.3,
+        mix_prev_random_prob: float = 0.2,
     ) -> dict[str, float]:
         if len(stages) == 0:
             return {}
@@ -256,13 +301,61 @@ class PerformanceGatedSpawnSchedule:
                     self._last_transition = 1
 
         self._stage_idx = max(0, min(self._stage_idx, len(stages) - 1))
-        stage_values = self._apply_stage_to_event(
-            env, stages[self._stage_idx], event_term_name
+
+        sampled_stage_values: dict[str, float]
+        sampled_stage_idx = torch.full(
+            (max(1, num_episodes),),
+            self._stage_idx,
+            dtype=torch.long,
+            device=env.device,
         )
+        if use_stage_mixture and num_episodes > 0:
+            p0 = max(0.0, float(mix_current_prob))
+            p1 = max(0.0, float(mix_easier_prob))
+            p2 = max(0.0, float(mix_prev_random_prob))
+            total = p0 + p1 + p2
+            if total <= 0.0:
+                p0, p1, p2 = 1.0, 0.0, 0.0
+            else:
+                p0, p1, p2 = p0 / total, p1 / total, p2 / total
+
+            draw = torch.rand(num_episodes, device=env.device)
+            current_mask = draw < p0
+            easier_mask = (draw >= p0) & (draw < (p0 + p1))
+            random_mask = ~(current_mask | easier_mask)
+
+            sampled_stage_idx = torch.full(
+                (num_episodes,),
+                self._stage_idx,
+                dtype=torch.long,
+                device=env.device,
+            )
+            if self._stage_idx > 0:
+                sampled_stage_idx[easier_mask] = self._stage_idx - 1
+            if self._stage_idx >= 0 and random_mask.any():
+                sampled_stage_idx[random_mask] = torch.randint(
+                    low=0,
+                    high=self._stage_idx + 1,
+                    size=(int(random_mask.sum().item()),),
+                    device=env.device,
+                )
+
+            sampled_stage_values = self._apply_mixed_stages_to_event(
+                env=env,
+                event_term_name=event_term_name,
+                stages=stages,
+                sampled_stage_idx=sampled_stage_idx,
+            )
+        else:
+            sampled_stage_values = self._apply_stage_to_event(
+                env, stages[self._stage_idx], event_term_name
+            )
 
         return {
+            "max_unlocked_stage_idx": float(self._stage_idx),
             "stage_idx": float(self._stage_idx),
             "episodes_in_window": float(num_episodes),
+            "episodes_accum_toward_window": float(self._episodes_accum),
             "avg_episode_bounces_window": float(avg_episode_bounces_window),
             "p_ge_promote_window": float(p_ge_promote_window),
             "p_ge_rollback_window": float(p_ge_rollback_window),
@@ -278,7 +371,11 @@ class PerformanceGatedSpawnSchedule:
             "promote_streak": float(self._promote_streak),
             "rollback_streak": float(self._rollback_streak),
             "last_transition": float(self._last_transition),
-            **stage_values,
+            "mixture_enabled": 1.0 if use_stage_mixture else 0.0,
+            "mixture_prob_current": float(mix_current_prob),
+            "mixture_prob_easier": float(mix_easier_prob),
+            "mixture_prob_prev_random": float(mix_prev_random_prob),
+            **sampled_stage_values,
         }
 
 

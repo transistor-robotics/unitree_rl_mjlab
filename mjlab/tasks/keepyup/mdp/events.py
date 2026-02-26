@@ -28,15 +28,31 @@ BALL_SPAWN_MAX_FRONTAL_RANGE = (-0.05, 0.15)  # 5 cm behind, 15 cm in front
 BALL_SPAWN_DEFAULT_HEIGHT = 1.6  # default vertical offset above paddle center
 
 
+def _expand_param_per_env(
+    value: float | torch.Tensor, num: int, device: torch.device | str
+) -> torch.Tensor:
+    """Convert scalar or tensor event params to per-env tensors."""
+    if isinstance(value, torch.Tensor):
+        tensor = value.to(device=device, dtype=torch.float32).flatten()
+        if tensor.numel() == 1:
+            return tensor.repeat(num)
+        if tensor.numel() != num:
+            raise ValueError(
+                f"Expected parameter with {num} values, got {tensor.numel()}."
+            )
+        return tensor
+    return torch.full((num,), float(value), device=device, dtype=torch.float32)
+
+
 def reset_ball(
     env: ManagerBasedRlEnv,
     env_ids: torch.Tensor | None,
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
     robot_cfg: SceneEntityCfg = _DEFAULT_ROBOT_CFG,
-    min_spawn_height: float = BALL_SPAWN_DEFAULT_HEIGHT,
-    lateral_spawn_variance: float = 0.0,
-    frontal_spawn_variance: float = 0.0,
-    max_throw_origin_distance: float = 0.0,
+    min_spawn_height: float | torch.Tensor = BALL_SPAWN_DEFAULT_HEIGHT,
+    lateral_spawn_variance: float | torch.Tensor = 0.0,
+    frontal_spawn_variance: float | torch.Tensor = 0.0,
+    max_throw_origin_distance: float | torch.Tensor = 0.0,
 ):
     # EC: TODO -> Add variance to angle of entry to mimic a human gently tossing the ball to the agent
     """Reset and spawn ball relative to the paddle.
@@ -69,14 +85,22 @@ def reset_ball(
     paddle_quat_w = robot.data.geom_quat_w[env_ids, paddle_geom_idx, :]  # [B, 4]
 
     # Frontal and lateral spawn offsets are sampled as fractions of max ranges.
-    frontal_scale = max(0.0, min(1.0, float(frontal_spawn_variance)))
-    lateral_scale = max(0.0, min(1.0, float(lateral_spawn_variance)))
-    min_height = float(min_spawn_height)
-    spawn_height_low = min(BALL_SPAWN_DEFAULT_HEIGHT, min_height)
-    spawn_height_high = max(BALL_SPAWN_DEFAULT_HEIGHT, min_height)
+    frontal_scale = torch.clamp(
+        _expand_param_per_env(frontal_spawn_variance, num, device), min=0.0, max=1.0
+    )
+    lateral_scale = torch.clamp(
+        _expand_param_per_env(lateral_spawn_variance, num, device), min=0.0, max=1.0
+    )
+    min_height = _expand_param_per_env(min_spawn_height, num, device)
+    spawn_height_low = torch.minimum(
+        torch.full((num,), BALL_SPAWN_DEFAULT_HEIGHT, device=device), min_height
+    )
+    spawn_height_high = torch.maximum(
+        torch.full((num,), BALL_SPAWN_DEFAULT_HEIGHT, device=device), min_height
+    )
     spawn_height = sample_uniform(
-        torch.full((num,), spawn_height_low, device=device),
-        torch.full((num,), spawn_height_high, device=device),
+        spawn_height_low,
+        spawn_height_high,
         (num,),
         device=device,
     )
@@ -114,12 +138,8 @@ def reset_ball(
     )
 
     # Throw origin is shifted along paddle frontal axis by a random distance in [0, max_throw_origin_distance].
-    throw_dist = sample_uniform(
-        torch.zeros(num, device=device),
-        torch.full((num,), float(max_throw_origin_distance), device=device),
-        (num,),
-        device=device,
-    )
+    max_throw = _expand_param_per_env(max_throw_origin_distance, num, device)
+    throw_dist = sample_uniform(torch.zeros(num, device=device), max_throw, (num,), device=device)
     spawn_pos_w = target_pos_w + throw_dist.unsqueeze(-1) * basis_x_w
 
     # Choose horizontal velocity so the ball reaches target_xy after free-fall time.
@@ -147,10 +167,10 @@ def reset_arm_then_ball(
     velocity_range: tuple[float, float] = (0.0, 0.0),
     asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
     robot_cfg: SceneEntityCfg = _DEFAULT_ROBOT_CFG,
-    min_spawn_height: float = BALL_SPAWN_DEFAULT_HEIGHT,
-    lateral_spawn_variance: float = 0.0,
-    frontal_spawn_variance: float = 0.0,
-    max_throw_origin_distance: float = 0.0,
+    min_spawn_height: float | torch.Tensor = BALL_SPAWN_DEFAULT_HEIGHT,
+    lateral_spawn_variance: float | torch.Tensor = 0.0,
+    frontal_spawn_variance: float | torch.Tensor = 0.0,
+    max_throw_origin_distance: float | torch.Tensor = 0.0,
 ) -> None:
     """Reset left arm joints, sync kinematics, then spawn ball above paddle."""
     if env_ids is None:

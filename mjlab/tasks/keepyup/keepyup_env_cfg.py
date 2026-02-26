@@ -300,14 +300,18 @@ def make_keepyup_env_cfg() -> ManagerBasedRlEnvCfg:
             params={
                 "event_term_name": "reset_arm_then_ball",
                 "reward_term_name": "total_bounces",
-                "promote_bounces": 0.0,
+                "promote_bounces": 2.0,
                 "rollback_bounces": 1.0,
-                "promote_threshold": 0.0,
+                "promote_threshold": 0.65,
                 "rollback_threshold": 0.3,
-                "promote_patience": 1,
+                "promote_patience": 6,
                 "rollback_patience": 3,
                 "ema_alpha": 0.1,
-                "min_episodes_per_window": 1,
+                "min_episodes_per_window": 32,
+                "use_stage_mixture": True,
+                "mix_current_prob": 0.5,
+                "mix_easier_prob": 0.3,
+                "mix_prev_random_prob": 0.2,
                 # Variances are normalized [0, 1] fractions of max spawn ranges.
                 # Spawn height is sampled in [1.6, min_spawn_height].
                 "stages": [
